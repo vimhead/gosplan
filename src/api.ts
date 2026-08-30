@@ -6,12 +6,12 @@ const WORKFLOW_DECLARATION_KIND = "palantir.workflow";
 export type MaybePromise<T> = T | Promise<T>;
 export type WorkflowDispose = () => void;
 
-export type WorkflowAnyHumanGate = {
+export type WorkflowAnyGate = {
 	readonly enabled: true;
 	readonly fields?: readonly string[];
 };
 
-export type WorkflowResolvedHumanGate = {
+export type WorkflowResolvedGate = {
 	readonly description: string;
 	readonly fields?: readonly string[];
 };
@@ -27,7 +27,7 @@ export type WorkflowDeclaration<
 	readonly description?: string;
 	readonly config?: ConfigSchema;
 	readonly params: ParamsSchema;
-	readonly humanGate?: WorkflowAnyHumanGate;
+	readonly gate?: WorkflowAnyGate;
 	readonly ui?: WorkflowUi;
 };
 
@@ -67,8 +67,8 @@ export type WorkflowUi = {
 	readonly config?: Record<string, WorkflowUiField>;
 };
 
-export type WorkflowHumanGate<ParamsSchema extends z.ZodType> = unknown extends z.input<ParamsSchema>
-	? WorkflowAnyHumanGate
+export type WorkflowGate<ParamsSchema extends z.ZodType> = unknown extends z.input<ParamsSchema>
+	? WorkflowAnyGate
 	: z.input<ParamsSchema> extends Record<string, unknown>
 		? {
 			readonly enabled: true;
@@ -89,7 +89,7 @@ export type WorkflowDefinition<
 	readonly description?: string;
 	readonly config?: ConfigSchema;
 	readonly params: ParamsSchema;
-	readonly humanGate?: WorkflowHumanGate<ParamsSchema>;
+	readonly gate?: WorkflowGate<ParamsSchema>;
 	readonly ui?: WorkflowUi;
 };
 
@@ -99,7 +99,7 @@ export type AnyWorkflowDefinition = {
 	readonly description?: string;
 	readonly config?: z.ZodType;
 	readonly params: z.ZodType;
-	readonly humanGate?: WorkflowAnyHumanGate;
+	readonly gate?: WorkflowAnyGate;
 	readonly ui?: WorkflowUi;
 };
 
@@ -125,16 +125,16 @@ type JoinPath<Head extends string, Parts extends readonly string[]> = Parts exte
 		? JoinPath<`${Head}.${First}`, Rest>
 		: string;
 
-type InvalidHumanGateFields<TWorkflow> = TWorkflow extends { readonly params: infer ParamsSchema extends z.ZodType; readonly humanGate: { readonly fields: infer Fields extends readonly string[] } }
+type InvalidGateFields<TWorkflow> = TWorkflow extends { readonly params: infer ParamsSchema extends z.ZodType; readonly gate: { readonly fields: infer Fields extends readonly string[] } }
 	? Exclude<Fields[number], Extract<keyof z.input<ParamsSchema>, string>>
 	: never;
 
-type ValidatedWorkflowHumanGate<TWorkflow> = [InvalidHumanGateFields<TWorkflow>] extends [never]
+type ValidatedWorkflowGate<TWorkflow> = [InvalidGateFields<TWorkflow>] extends [never]
 	? unknown
-	: { readonly humanGate: { readonly fields: readonly Extract<keyof z.input<TWorkflow extends { readonly params: infer ParamsSchema extends z.ZodType } ? ParamsSchema : z.ZodType>, string>[] } };
+	: { readonly gate: { readonly fields: readonly Extract<keyof z.input<TWorkflow extends { readonly params: infer ParamsSchema extends z.ZodType } ? ParamsSchema : z.ZodType>, string>[] } };
 
-export type ValidatedWorkflowHumanGates<Workflows> = {
-	readonly [Key in keyof Workflows]: ValidatedWorkflowHumanGate<Workflows[Key]>;
+export type ValidatedWorkflowGates<Workflows> = {
+	readonly [Key in keyof Workflows]: ValidatedWorkflowGate<Workflows[Key]>;
 };
 
 export type QualifiedPluginWorkflow<
@@ -187,7 +187,7 @@ export type DefinePluginManifestInput<
 	States extends WorkflowPluginStateTree | undefined,
 > = {
 	readonly id: PluginId;
-	readonly workflows: Workflows & ValidatedWorkflowHumanGates<Workflows>;
+	readonly workflows: Workflows & ValidatedWorkflowGates<Workflows>;
 	readonly states?: States;
 };
 
@@ -242,7 +242,7 @@ export type WorkflowFail = {
 
 export type WorkflowExecutionResult = WorkflowNext | WorkflowComplete | WorkflowFail;
 
-export type WorkflowHumanGateImplementation<TWorkflow extends AnyWorkflowDeclaration> = {
+export type WorkflowGateImplementation<TWorkflow extends AnyWorkflowDeclaration> = {
 	describe(
 		runtime: WorkflowRuntime,
 		params: WorkflowParams<TWorkflow>,
@@ -252,7 +252,7 @@ export type WorkflowHumanGateImplementation<TWorkflow extends AnyWorkflowDeclara
 
 export type WorkflowImplementation<TWorkflow extends AnyWorkflowDeclaration> = {
 	readonly config?: WorkflowConfigInput<TWorkflow>;
-	readonly humanGate?: WorkflowHumanGateImplementation<TWorkflow>;
+	readonly gate?: WorkflowGateImplementation<TWorkflow>;
 	execute(
 		runtime: WorkflowRuntime,
 		params: WorkflowParams<TWorkflow>,
@@ -313,7 +313,7 @@ export type WorkflowInterruptedLaunchResult = {
 	readonly cwd: string;
 	readonly workflowId: string;
 	readonly params: unknown;
-	readonly humanGate: WorkflowResolvedHumanGate;
+	readonly gate: WorkflowResolvedGate;
 };
 
 export type WorkflowLaunchResult = WorkflowStartedLaunchResult | WorkflowCompletedLaunchResult | WorkflowFailedLaunchResult | WorkflowInterruptedLaunchResult;

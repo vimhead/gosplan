@@ -15,10 +15,10 @@ type RuntimeWorkflowStep = {
 	readonly configOverride?: unknown;
 	readonly cwd: string;
 	readonly env: Record<string, string>;
-	readonly humanGate?: RuntimeHumanGate;
+	readonly gate?: RuntimeGate;
 };
 
-type RuntimeHumanGate = {
+type RuntimeGate = {
 	readonly status: "pending" | "satisfied";
 	readonly description?: string;
 };
@@ -145,7 +145,7 @@ export class WorkflowRuntimeStateStore {
 		if (!this.state.current) throw new Error("Cannot interrupt workflow run without current step");
 		await this.update({
 			status: "interrupted",
-			current: { ...this.state.current, params, humanGate: { status: "pending", description } },
+			current: { ...this.state.current, params, gate: { status: "pending", description } },
 			outcome: null,
 			failed: null,
 		});
@@ -155,7 +155,7 @@ export class WorkflowRuntimeStateStore {
 		if (!this.state.current) throw new Error("Cannot resume workflow run without current step");
 		await this.update({
 			status: "running",
-			current: { ...this.state.current, params, humanGate: { ...this.state.current.humanGate, status: "satisfied" } },
+			current: { ...this.state.current, params, gate: { ...this.state.current.gate, status: "satisfied" } },
 			outcome: null,
 			failed: null,
 		});
@@ -266,7 +266,7 @@ function parseWorkflowRuntimeState(value: unknown): WorkflowRuntimeState {
 
 function assertInterruptedWorkflowRuntimeState(state: Partial<WorkflowRuntimeState>): void {
 	if (!state.current) throw new Error("Invalid interrupted workflow runtime current step");
-	const humanGate = state.current.humanGate;
-	if (!humanGate || humanGate.status !== "pending") throw new Error("Invalid interrupted workflow runtime human gate");
-	if (typeof humanGate.description !== "string" || humanGate.description.length === 0) throw new Error("Invalid interrupted workflow runtime human gate description");
+	const gate = state.current.gate;
+	if (!gate || gate.status !== "pending") throw new Error("Invalid interrupted workflow runtime gate");
+	if (typeof gate.description !== "string" || gate.description.length === 0) throw new Error("Invalid interrupted workflow runtime gate description");
 }

@@ -71,8 +71,8 @@ async function runCommand(args: readonly string[]): Promise<void> {
 		writeJson({ checkpoints: await (await WorkflowRunStore.open(runRoot)).listCheckpoints() });
 		return;
 	}
-	if (command === "runs" && subcommand === "human-gate" && rest[0]) {
-		await inspectWorkflowRunHumanGate(rest[0]);
+	if (command === "runs" && subcommand === "gate" && rest[0]) {
+		await inspectWorkflowRunGate(rest[0]);
 		return;
 	}
 	if (command === "runs" && subcommand === "logs" && rest[0]) {
@@ -118,7 +118,7 @@ async function executeWorkflowRun(runId: string): Promise<void> {
 	process.once("SIGINT", () => abortController.abort(new Error("Interrupted")));
 	const runRoot = resolve(process.cwd(), RUNS_ROOT, runId);
 	const project = await loadPalantirProject(process.cwd());
-	const runtime = new PalantirRuntime({ cwd: process.cwd(), signal: abortController.signal, humanGateMode: "pause" });
+	const runtime = new PalantirRuntime({ cwd: process.cwd(), signal: abortController.signal, gateMode: "pause" });
 	for (const plugin of project.plugins) runtime.registerPlugin(plugin);
 	const launchRequest = await readOptionalWorkflowLaunchRequest(runRoot);
 	if (launchRequest) {
@@ -143,7 +143,7 @@ async function rollbackWorkflowRun(run: string, args: readonly string[]): Promis
 	const checkpointId = args[0];
 	if (!checkpointId) throw new Error("Missing checkpoint id");
 	const runRoot = await resolveWorkflowRunRoot(process.cwd(), run);
-	const runtime = new PalantirRuntime({ cwd: process.cwd(), humanGateMode: "pause" });
+	const runtime = new PalantirRuntime({ cwd: process.cwd(), gateMode: "pause" });
 	writeJson({ run: await runtime.rollbackRun(runRoot, checkpointId) });
 }
 
@@ -152,12 +152,12 @@ async function inspectWorkflowRun(run: string): Promise<WorkflowRunInfo> {
 	return getWorkflowRunInfo(runRoot);
 }
 
-async function inspectWorkflowRunHumanGate(run: string): Promise<void> {
+async function inspectWorkflowRunGate(run: string): Promise<void> {
 	const runRoot = await resolveWorkflowRunRoot(process.cwd(), run);
 	const project = await loadPalantirProject(process.cwd());
-	const runtime = new PalantirRuntime({ cwd: process.cwd(), humanGateMode: "pause" });
+	const runtime = new PalantirRuntime({ cwd: process.cwd(), gateMode: "pause" });
 	for (const plugin of project.plugins) runtime.registerPlugin(plugin);
-	writeJson({ launch: await runtime.getActiveHumanGate(runRoot) });
+	writeJson({ launch: await runtime.getActiveGate(runRoot) });
 }
 
 async function signalWorkflowRun(run: string, signal: NodeJS.Signals): Promise<void> {

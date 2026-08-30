@@ -38,7 +38,7 @@ export type PalantirRuntimeInput = {
 	readonly agentDir?: string;
 	readonly signal?: AbortSignal;
 	readonly responseCollector?: AgentResponseCollector;
-	readonly humanGateMode?: "auto" | "pause";
+	readonly gateMode?: "auto" | "pause";
 };
 
 type WorkflowRuntimeSession = {
@@ -64,7 +64,7 @@ type WorkflowStep = {
 	readonly configOverride?: unknown;
 	readonly cwd: string;
 	readonly env: Record<string, string>;
-	readonly humanGate?: NonNullable<WorkflowRuntimeState["current"]>["humanGate"];
+	readonly gate?: NonNullable<WorkflowRuntimeState["current"]>["gate"];
 };
 
 export class PalantirRuntime {
@@ -128,7 +128,7 @@ export class PalantirRuntime {
 		return (await WorkflowRunStore.open(runRoot)).listCheckpoints();
 	}
 
-	async getActiveHumanGate(path: string): Promise<WorkflowInterruptedLaunchResult> {
+	async getActiveGate(path: string): Promise<WorkflowInterruptedLaunchResult> {
 		const runRoot = await resolveWorkflowRunRoot(this.input.cwd, path);
 		const state = (await WorkflowRuntimeStateStore.load(runRoot)).currentState();
 		if (state.status !== "interrupted") throw new Error(`Workflow run is not interrupted: ${runRoot}`);
@@ -136,7 +136,7 @@ export class PalantirRuntime {
 		if (!current) throw new Error(`Workflow run is not resumable: ${runRoot}`);
 		const workflow = this.registry.workflowById(current.workflowId);
 		if (!workflow) throw new Error(`Unknown workflow for interrupted run: ${current.workflowId}`);
-		return interruptedLaunchResult({ id: state.id, name: state.name, workspace: state.workspace, cwd: current.cwd }, workflow, current.params, current.humanGate?.description);
+		return interruptedLaunchResult({ id: state.id, name: state.name, workspace: state.workspace, cwd: current.cwd }, workflow, current.params, current.gate?.description);
 	}
 
 	async rollbackRun(path: string, checkpointId: string): Promise<WorkflowRunInfo> {
@@ -188,9 +188,9 @@ export class PalantirRuntime {
 			for (let step = 1; step <= 1_000; step++) {
 				throwIfWorkflowRunAborted(session.activeRun);
 				const stepRuntime = session.runtime.with({ cwd: currentStep.cwd, env: currentStep.env });
-				if (shouldPauseForHumanGate(currentStep)) {
+				if (shouldPauseForGate(currentStep)) {
 					const parsedParams = currentStep.workflow.params.parse(currentStep.params);
-					const description = await this.registry.describeHumanGate(currentStep.workflow, stepRuntime, parsedParams, currentStep.configOverride);
+					const description = await this.registry.describeGate(currentStep.workflow, stepRuntime, parsedParams, currentStep.configOverride);
 					await session.state.interruptCurrent(parsedParams, description);
 					await recordRuntimeEvent(session, { type: "run.interrupted", workflowId: currentStep.workflow.id });
 					await commitRuntimeBoundary(session, `run interrupted: ${currentStep.workflow.id}`);
@@ -258,7 +258,7 @@ export class PalantirRuntime {
 			configOverride: next.configOverride,
 			cwd: next.cwd ?? runtime.cwd,
 			env: next.env ?? {},
-			humanGate: this.input.humanGateMode === "pause" && workflow.humanGate ? { status: "pending" } : undefined,
+			gate: this.input.gateMode === "pause" && workflow.gate ? { status: "pending" } : undefined,
 		};
 	}
 
@@ -419,7 +419,7 @@ function toWorkflowStep(workflow: AnyWorkflowDeclaration, step: NonNullable<Work
 		configOverride: step.configOverride,
 		cwd: step.cwd,
 		env: step.env,
-		humanGate: step.humanGate,
+		gate: step.gate,
 	};
 }
 
@@ -430,12 +430,12 @@ function toRuntimeStateStep(step: WorkflowStep): NonNullable<WorkflowRuntimeStat
 		configOverride: step.configOverride,
 		cwd: step.cwd,
 		env: step.env,
-		humanGate: step.humanGate,
+		gate: step.gate,
 	};
 }
 
-function shouldPauseForHumanGate(step: WorkflowStep): boolean {
-	return step.humanGate?.status === "pending" && step.workflow.humanGate !== undefined;
+function shouldPauseForGate(step: WorkflowStep): boolean {
+	return step.gate?.status === "pending" && step.workflow.gate !== undefined;
 }
 
 function throwIfWorkflowRunAborted(activeRun: ActiveWorkflowRun): void {
@@ -446,8 +446,8 @@ function throwIfWorkflowRunAborted(activeRun: ActiveWorkflowRun): void {
 }
 
 function interruptedLaunchResult(runtime: WorkflowRunIdentity, workflow: AnyWorkflowDeclaration, params: unknown, description: string | undefined): WorkflowInterruptedLaunchResult {
-	if (!workflow.humanGate) throw new Error(`Workflow is not human-gated: ${workflow.id}`);
-	if (!description) throw new Error(`Interrupted workflow is missing human gate description: ${workflow.id}`);
+	if (!workflow.gate) throw new Error(`Workflow is not gated: ${workflow.id}`);
+	if (!description) throw new Error(`Interrupted workflow is missing gate description: ${workflow.id}`);
 	return {
 		status: "interrupted",
 		id: runtime.id,
@@ -456,7 +456,7 @@ function interruptedLaunchResult(runtime: WorkflowRunIdentity, workflow: AnyWork
 		cwd: runtime.cwd,
 		workflowId: workflow.id,
 		params,
-		humanGate: { description, fields: workflow.humanGate.fields },
+		gate: { description, fields: workflow.gate.fields },
 	};
 }
 

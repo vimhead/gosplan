@@ -22,7 +22,7 @@ npm install github:vimhead/palantir
 - CAS checkpoints for rollback and resume.
 - Workspace-only access through `runtime.workspace`, `runtime.cwd`, and `runtime.path(...)`.
 - Typed state, artifacts, command logs, and Pi SDK agent calls.
-- Human gates that pause before a target workflow and edit normal params.
+- Gates that pause before a target workflow and edit normal params.
 
 ## Register plugins
 
@@ -178,9 +178,9 @@ for await (const event of client.runs.logs(run.name, { follow: true })) {
 }
 ```
 
-## Human gates
+## Gates
 
-A target workflow can mark normal params as human-editable before execution.
+A target workflow can mark normal params as editable before execution.
 `fields` is typed to top-level params. If omitted, all params are editable.
 
 ```ts
@@ -192,7 +192,7 @@ const reviewRouterParamsSchema = z.object({
 
 export const reviewRouterWorkflow = {
   displayTitle: null,
-  humanGate: {
+  gate: {
     enabled: true,
     fields: ["decision", "notes"] as const,
   },
@@ -205,7 +205,7 @@ run pauses.
 
 ```ts
 reviewRouter: {
-  humanGate: {
+  gate: {
     async describe(runtime, params) {
       const ref = await runtime.state.get(manifest.states.planning.planArtifact);
       return `Review ${params.diffArtifact.path} against ${ref.path}.`;

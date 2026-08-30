@@ -29,7 +29,7 @@ export type PalantirClient = {
 		list(): Promise<WorkflowRunInfo[]>;
 		inspect(run: string): Promise<WorkflowRunInfo>;
 		checkpoints(run: string): Promise<WorkflowRunCheckpoint[]>;
-		humanGate(run: string): Promise<WorkflowInterruptedLaunchResult>;
+		gate(run: string): Promise<WorkflowInterruptedLaunchResult>;
 		rollback(run: string, checkpointId: string): Promise<WorkflowRunInfo>;
 		stop(run: string): Promise<WorkflowRunInfo>;
 		kill(run: string): Promise<WorkflowRunInfo>;
@@ -53,7 +53,7 @@ export function createPalantirClient(input: PalantirClientInput = {}): PalantirC
 			list: async () => (await processRunner.readJson<{ runs: WorkflowRunInfo[] }>(["runs", "list"])).runs,
 			inspect: async (run) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "inspect", run])).run,
 			checkpoints: async (run) => (await processRunner.readJson<{ checkpoints: WorkflowRunCheckpoint[] }>(["runs", "checkpoints", run])).checkpoints,
-			humanGate: async (run) => (await processRunner.readJson<{ launch: WorkflowInterruptedLaunchResult }>(["runs", "human-gate", run])).launch,
+			gate: async (run) => (await processRunner.readJson<{ launch: WorkflowInterruptedLaunchResult }>(["runs", "gate", run])).launch,
 			rollback: async (run, checkpointId) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "rollback", run, checkpointId])).run,
 			stop: async (run) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "stop", run])).run,
 			kill: async (run) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "kill", run])).run,

@@ -30,7 +30,7 @@ export class WorkflowRegistry {
 			config: workflow.config ? workflow.config.parse(defaultConfigInput(workflow, implementation.config)) : undefined,
 		};
 		assertLaunchableWorkflow(workflow);
-		assertHumanGateWorkflow(workflow);
+		assertGateWorkflow(workflow);
 		this.entries.set(workflow.id, entry);
 
 		return () => {
@@ -50,7 +50,7 @@ export class WorkflowRegistry {
 		return this.entries.get(workflowId)?.workflow;
 	}
 
-	async describeHumanGate<TWorkflow extends AnyWorkflowDeclaration>(
+	async describeGate<TWorkflow extends AnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		runtime: WorkflowRuntime,
 		params: unknown,
@@ -58,11 +58,11 @@ export class WorkflowRegistry {
 	): Promise<string> {
 		const entry = this.entries.get(workflow.id);
 		if (!entry) throw new Error(`Unknown workflow: ${workflow.id}`);
-		if (!workflow.humanGate) throw new Error(`Workflow is not human-gated: ${workflow.id}`);
+		if (!workflow.gate) throw new Error(`Workflow is not gated: ${workflow.id}`);
 		const parsedParams = workflow.params.parse(params) as WorkflowParams<TWorkflow>;
 		const parsedConfig = parseExecutionConfig(workflow, entry.config, configOverride);
-		const description = await (entry.implementation as WorkflowImplementation<TWorkflow>).humanGate?.describe(runtime, parsedParams, parsedConfig);
-		return validateHumanGateDescription(description ?? defaultHumanGateDescription(workflow), workflow.id);
+		const description = await (entry.implementation as WorkflowImplementation<TWorkflow>).gate?.describe(runtime, parsedParams, parsedConfig);
+		return validateGateDescription(description ?? defaultGateDescription(workflow), workflow.id);
 	}
 
 	async execute<TWorkflow extends AnyWorkflowDeclaration>(
@@ -117,25 +117,25 @@ function deepMerge(base: Record<string, unknown>, override: Record<string, unkno
 	return result;
 }
 
-function assertHumanGateWorkflow(workflow: AnyWorkflowDeclaration): void {
-	if (!workflow.humanGate) return;
-	if (workflow.humanGate.enabled !== true) throw new Error(`Workflow human gate must be enabled with true: ${workflow.id}`);
-	if (!workflow.humanGate.fields) return;
+function assertGateWorkflow(workflow: AnyWorkflowDeclaration): void {
+	if (!workflow.gate) return;
+	if (workflow.gate.enabled !== true) throw new Error(`Workflow gate must be enabled with true: ${workflow.id}`);
+	if (!workflow.gate.fields) return;
 	const paramsSchema = unwrapSchema(workflow.params);
-	if (schemaType(paramsSchema) !== "object") throw new Error(`Workflow human gate fields require object params: ${workflow.id}`);
+	if (schemaType(paramsSchema) !== "object") throw new Error(`Workflow gate fields require object params: ${workflow.id}`);
 	const paramsShape = schemaShape(paramsSchema);
-	for (const field of workflow.humanGate.fields) {
-		if (!Object.prototype.hasOwnProperty.call(paramsShape, field)) throw new Error(`Unknown workflow human gate field ${field}: ${workflow.id}`);
+	for (const field of workflow.gate.fields) {
+		if (!Object.prototype.hasOwnProperty.call(paramsShape, field)) throw new Error(`Unknown workflow gate field ${field}: ${workflow.id}`);
 	}
 }
 
-function defaultHumanGateDescription(workflow: AnyWorkflowDeclaration): string {
+function defaultGateDescription(workflow: AnyWorkflowDeclaration): string {
 	return workflow.description ?? workflow.displayTitle ?? workflow.id;
 }
 
-function validateHumanGateDescription(description: string, workflowId: string): string {
+function validateGateDescription(description: string, workflowId: string): string {
 	const trimmed = description.trim();
-	if (trimmed.length === 0) throw new Error(`Workflow human gate description must not be empty: ${workflowId}`);
+	if (trimmed.length === 0) throw new Error(`Workflow gate description must not be empty: ${workflowId}`);
 	return trimmed;
 }
 
