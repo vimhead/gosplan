@@ -1,6 +1,6 @@
-import type { AgentUsage } from "../api.ts";
+import type { PalantirAgentUsage } from "../api.ts";
 
-export function agentUsageFromValue(value: unknown): AgentUsage | undefined {
+export function agentUsageFromValue(value: unknown): PalantirAgentUsage | undefined {
 	if (!value || typeof value !== "object") return undefined;
 	const usage = value as Record<string, unknown>;
 	const input = numberField(usage.input);
@@ -27,11 +27,11 @@ export function agentUsageFromValue(value: unknown): AgentUsage | undefined {
 	};
 }
 
-export function totalAgentUsage(usages: readonly AgentUsage[]): AgentUsage {
+export function totalAgentUsage(usages: readonly PalantirAgentUsage[]): PalantirAgentUsage {
 	return usages.reduce(addAgentUsage, emptyAgentUsage());
 }
 
-export function addAgentUsage(left: AgentUsage, right: AgentUsage): AgentUsage {
+export function addAgentUsage(left: PalantirAgentUsage, right: PalantirAgentUsage): PalantirAgentUsage {
 	const reasoning = left.reasoning === undefined && right.reasoning === undefined ? undefined : (left.reasoning ?? 0) + (right.reasoning ?? 0);
 	return {
 		input: left.input + right.input,
@@ -50,7 +50,7 @@ export function addAgentUsage(left: AgentUsage, right: AgentUsage): AgentUsage {
 	};
 }
 
-export function emptyAgentUsage(): AgentUsage {
+export function emptyAgentUsage(): PalantirAgentUsage {
 	return {
 		input: 0,
 		output: 0,

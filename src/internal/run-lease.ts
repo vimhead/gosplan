@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { RunHealth } from "../api.ts";
+import type { PalantirRunHealth } from "../api.ts";
 import { isNodeError } from "./errors.ts";
 import { writeJsonAtomically } from "./json-file.ts";
 
@@ -11,7 +11,7 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 const HEARTBEAT_TTL_MS = 60_000;
 const ACQUIRE_ATTEMPTS = 5;
 
-export type WorkflowRunLeaseOwner = {
+export type PalantirRunLeaseOwner = {
 	readonly token: string;
 	readonly acquiredAt: string;
 	readonly heartbeatAt: string;
@@ -20,7 +20,7 @@ export type WorkflowRunLeaseOwner = {
 	readonly command: readonly string[];
 };
 
-export class WorkflowRunLease {
+export class PalantirRunLease {
 	private heartbeat: ReturnType<typeof setInterval> | undefined;
 	private heartbeatChain: Promise<void> = Promise.resolve();
 	private isReleased = false;
@@ -28,15 +28,15 @@ export class WorkflowRunLease {
 	private constructor(
 		private readonly lockRoot: string,
 		private readonly token: string,
-		private readonly processOwner: WorkflowRunProcessOwner,
+		private readonly processOwner: PalantirRunProcessOwner,
 	) {}
 
-	static async acquire(runRoot: string, processOwner: WorkflowRunProcessOwner = currentWorkflowRunProcessOwner()): Promise<WorkflowRunLease> {
+	static async acquire(runRoot: string, processOwner: PalantirRunProcessOwner = currentRunProcessOwner()): Promise<PalantirRunLease> {
 		const lockRoot = join(runRoot, LOCK_DIR_NAME);
 		for (let attempt = 1; attempt <= ACQUIRE_ATTEMPTS; attempt++) {
 			try {
 				await mkdir(lockRoot);
-				const lease = new WorkflowRunLease(lockRoot, randomUUID(), processOwner);
+				const lease = new PalantirRunLease(lockRoot, randomUUID(), processOwner);
 				try {
 					await lease.writeOwner({ acquiredAt: new Date().toISOString() });
 				} catch (error) {
@@ -47,19 +47,19 @@ export class WorkflowRunLease {
 				return lease;
 			} catch (error) {
 				if (!isNodeError(error) || error.code !== "EEXIST") throw error;
-				const owner = await readWorkflowRunLeaseOwner(join(lockRoot, OWNER_FILE_NAME));
-				const isStale = owner ? isWorkflowRunLeaseStale(owner) : await isWorkflowRunLeaseDirectoryStale(lockRoot);
-				if (!isStale) throw new Error(`Workflow run is already active: ${runRoot}`);
+				const owner = await readRunLeaseOwner(join(lockRoot, OWNER_FILE_NAME));
+				const isStale = owner ? isRunLeaseStale(owner) : await isRunLeaseDirectoryStale(lockRoot);
+				if (!isStale) throw new Error(`Run is already active: ${runRoot}`);
 				await rm(lockRoot, { recursive: true, force: true });
 			}
 		}
-		throw new Error(`Could not acquire workflow run lease: ${runRoot}`);
+		throw new Error(`Could not acquire run lease: ${runRoot}`);
 	}
 
 	async assertOwned(): Promise<void> {
-		if (this.isReleased) throw new Error("Workflow run lease has been released");
-		const owner = await readWorkflowRunLeaseOwner(this.ownerPath);
-		if (!owner || owner.token !== this.token) throw new Error("Workflow run lease was lost");
+		if (this.isReleased) throw new Error("Run lease has been released");
+		const owner = await readRunLeaseOwner(this.ownerPath);
+		if (!owner || owner.token !== this.token) throw new Error("Run lease was lost");
 	}
 
 	async release(): Promise<void> {
@@ -67,7 +67,7 @@ export class WorkflowRunLease {
 		this.isReleased = true;
 		if (this.heartbeat) clearInterval(this.heartbeat);
 		await this.heartbeatChain.catch(() => undefined);
-		const owner = await readWorkflowRunLeaseOwner(this.ownerPath);
+		const owner = await readRunLeaseOwner(this.ownerPath);
 		if (owner?.token === this.token) await rm(this.lockRoot, { recursive: true, force: true });
 	}
 
@@ -87,8 +87,8 @@ export class WorkflowRunLease {
 
 	private async refreshHeartbeat(): Promise<void> {
 		if (this.isReleased) return;
-		const owner = await readWorkflowRunLeaseOwner(this.ownerPath);
-		if (!owner || owner.token !== this.token) throw new Error("Workflow run lease was lost");
+		const owner = await readRunLeaseOwner(this.ownerPath);
+		if (!owner || owner.token !== this.token) throw new Error("Run lease was lost");
 		await this.writeOwner({ acquiredAt: owner.acquiredAt });
 	}
 
@@ -98,24 +98,24 @@ export class WorkflowRunLease {
 	}
 }
 
-export type WorkflowRunProcessOwner = {
+export type PalantirRunProcessOwner = {
 	readonly pid: number;
 	readonly processGroupId: number;
 	readonly command: readonly string[];
 };
 
-export async function getWorkflowRunLeaseHealth(runRoot: string): Promise<RunHealth> {
+export async function getRunLeaseHealth(runRoot: string): Promise<PalantirRunHealth> {
 	const lockRoot = join(runRoot, LOCK_DIR_NAME);
-	const owner = await readWorkflowRunLeaseOwner(join(lockRoot, OWNER_FILE_NAME));
-	if (owner) return isWorkflowRunLeaseStale(owner) ? "unhealthy" : "healthy";
-	return await isWorkflowRunLeaseDirectoryStale(lockRoot) ? "unhealthy" : "healthy";
+	const owner = await readRunLeaseOwner(join(lockRoot, OWNER_FILE_NAME));
+	if (owner) return isRunLeaseStale(owner) ? "unhealthy" : "healthy";
+	return await isRunLeaseDirectoryStale(lockRoot) ? "unhealthy" : "healthy";
 }
 
-export async function getWorkflowRunLeaseOwner(runRoot: string): Promise<WorkflowRunLeaseOwner | undefined> {
-	return readWorkflowRunLeaseOwner(join(runRoot, LOCK_DIR_NAME, OWNER_FILE_NAME));
+export async function getRunLeaseOwner(runRoot: string): Promise<PalantirRunLeaseOwner | undefined> {
+	return readRunLeaseOwner(join(runRoot, LOCK_DIR_NAME, OWNER_FILE_NAME));
 }
 
-function currentWorkflowRunProcessOwner(): WorkflowRunProcessOwner {
+function currentRunProcessOwner(): PalantirRunProcessOwner {
 	return {
 		pid: process.pid,
 		processGroupId: process.pid,
@@ -123,18 +123,18 @@ function currentWorkflowRunProcessOwner(): WorkflowRunProcessOwner {
 	};
 }
 
-async function readWorkflowRunLeaseOwner(path: string): Promise<WorkflowRunLeaseOwner | undefined> {
+async function readRunLeaseOwner(path: string): Promise<PalantirRunLeaseOwner | undefined> {
 	try {
-		return parseWorkflowRunLeaseOwner(JSON.parse(await readFile(path, "utf8")));
+		return parseRunLeaseOwner(JSON.parse(await readFile(path, "utf8")));
 	} catch (error) {
 		if (isNodeError(error) && error.code === "ENOENT") return undefined;
 		return undefined;
 	}
 }
 
-function parseWorkflowRunLeaseOwner(value: unknown): WorkflowRunLeaseOwner | undefined {
+function parseRunLeaseOwner(value: unknown): PalantirRunLeaseOwner | undefined {
 	if (!value || typeof value !== "object") return undefined;
-	const owner = value as Partial<WorkflowRunLeaseOwner>;
+	const owner = value as Partial<PalantirRunLeaseOwner>;
 	if (typeof owner.token !== "string" || owner.token.length === 0) return undefined;
 	if (typeof owner.acquiredAt !== "string" || Number.isNaN(Date.parse(owner.acquiredAt))) return undefined;
 	if (typeof owner.heartbeatAt !== "string" || Number.isNaN(Date.parse(owner.heartbeatAt))) return undefined;
@@ -144,11 +144,11 @@ function parseWorkflowRunLeaseOwner(value: unknown): WorkflowRunLeaseOwner | und
 	return { token: owner.token, acquiredAt: owner.acquiredAt, heartbeatAt: owner.heartbeatAt, pid, processGroupId, command };
 }
 
-function isWorkflowRunLeaseStale(owner: WorkflowRunLeaseOwner): boolean {
+function isRunLeaseStale(owner: PalantirRunLeaseOwner): boolean {
 	return Date.now() - Date.parse(owner.heartbeatAt) > HEARTBEAT_TTL_MS;
 }
 
-async function isWorkflowRunLeaseDirectoryStale(lockRoot: string): Promise<boolean> {
+async function isRunLeaseDirectoryStale(lockRoot: string): Promise<boolean> {
 	try {
 		return Date.now() - (await stat(lockRoot)).mtimeMs > HEARTBEAT_TTL_MS;
 	} catch (error) {

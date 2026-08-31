@@ -2,56 +2,56 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-	type AnyWorkflowDeclaration,
-	type AnyWorkflowLaunchOptions,
-	type AnyWorkflowPluginManifest,
-	type WorkflowDispose,
-	type WorkflowLaunchOptions,
-	type WorkflowInterruptedLaunchResult,
-	type WorkflowLaunchResult,
-	type WorkflowRunCheckpoint,
-	type WorkflowRunInfo,
-	type WorkflowPlugin,
-	type WorkflowPluginImplementation,
-	type WorkflowPluginImplementationInput,
-	type WorkflowNext,
-	type WorkflowRuntime,
+	type PalantirAnyWorkflowDeclaration,
+	type PalantirAnyRunStartOptions,
+	type PalantirAnyWorkflowPluginManifest,
+	type PalantirDispose,
+	type PalantirRunStartOptions,
+	type PalantirInterruptedRunResult,
+	type PalantirRunResult,
+	type PalantirRunCheckpoint,
+	type PalantirRunInfo,
+	type PalantirWorkflowPlugin,
+	type PalantirWorkflowPluginImplementation,
+	type PalantirWorkflowPluginImplementationInput,
+	type PalantirRunNext,
+	type PalantirRun,
 } from "../api.ts";
-import { AgentResponseCollector } from "./agent-response-tool.ts";
-import { WorkflowArtifacts } from "./artifacts.ts";
+import { PalantirAgentResponseCollector } from "./agent-response-tool.ts";
+import { PalantirArtifacts } from "./artifacts.ts";
 import { errorMessage } from "./errors.ts";
-import { WorkflowRunLogs } from "./logs.ts";
-import { WorkflowRunLease } from "./run-lease.ts";
-import { WorkflowRunLogger } from "./run-log.ts";
-import { WorkflowRunStore, workflowRunCurrentRoot } from "./run-store.ts";
-import { WorkflowRuntimeStateStore, getWorkflowRunInfo, resolveWorkflowRunRoot, type WorkflowRuntimeState } from "./runtime-state.ts";
-import { DefaultWorkflowRuntime } from "./runtime.ts";
-import { JsonWorkflowState, MemoryWorkflowState } from "./state-store.ts";
-import { WorkflowRegistry, type RegisteredWorkflow, type WorkflowStepResult } from "./workflow-registry.ts";
+import { PalantirRunLogs } from "./logs.ts";
+import { PalantirRunLease } from "./run-lease.ts";
+import { PalantirRunLogger } from "./run-log.ts";
+import { PalantirRunStore, runCurrentRoot } from "./run-store.ts";
+import { PalantirRunStateStore, getRunInfo, resolveRunRoot, type PalantirRunState } from "./run-state.ts";
+import { PalantirRunContext } from "./run.ts";
+import { PalantirJsonWorkflowState, PalantirMemoryWorkflowState } from "./state-store.ts";
+import { PalantirWorkflowRegistry, type PalantirRegisteredWorkflow, type PalantirWorkflowStepResult } from "./workflow-registry.ts";
 
 const RUNS_DIR_NAME = ".palantir";
 const STATE_FILE_NAME = "state.json";
 const MANIFEST_FILE_NAME = "manifest.json";
 
-export type PalantirRuntimeInput = {
+export type PalantirEngineInput = {
 	readonly cwd: string;
 	readonly agentDir?: string;
 	readonly signal?: AbortSignal;
-	readonly responseCollector?: AgentResponseCollector;
+	readonly responseCollector?: PalantirAgentResponseCollector;
 	readonly gateMode?: "auto" | "pause";
 };
 
-type WorkflowRuntimeSession = {
+type RunSession = {
 	readonly runRoot: string;
-	readonly runtime: WorkflowRuntime;
-	readonly state: WorkflowRuntimeStateStore;
-	readonly lease: WorkflowRunLease;
-	readonly runStore: WorkflowRunStore;
-	readonly logger: WorkflowRunLogger;
-	readonly activeRun: ActiveWorkflowRun;
+	readonly run: PalantirRun;
+	readonly state: PalantirRunStateStore;
+	readonly lease: PalantirRunLease;
+	readonly runStore: PalantirRunStore;
+	readonly logger: PalantirRunLogger;
+	readonly activeRun: ActiveRun;
 };
 
-type ActiveWorkflowRun = {
+type ActiveRun = {
 	readonly controller: AbortController;
 	readonly finished: Promise<void>;
 	readonly finish: () => void;
@@ -59,26 +59,26 @@ type ActiveWorkflowRun = {
 };
 
 type WorkflowStep = {
-	readonly workflow: AnyWorkflowDeclaration;
+	readonly workflow: PalantirAnyWorkflowDeclaration;
 	readonly params: unknown;
 	readonly configOverride?: unknown;
 	readonly cwd: string;
 	readonly env: Record<string, string>;
-	readonly gate?: NonNullable<WorkflowRuntimeState["current"]>["gate"];
+	readonly gate?: NonNullable<PalantirRunState["current"]>["gate"];
 };
 
-export class PalantirRuntime {
-	private readonly registry = new WorkflowRegistry();
-	private readonly registrarState = new MemoryWorkflowState();
-	private readonly disposersByPlugin = new Map<string, WorkflowDispose[]>();
-	private readonly responseCollector: AgentResponseCollector;
-	private readonly activeRuns = new Map<string, ActiveWorkflowRun>();
+export class PalantirEngine {
+	private readonly registry = new PalantirWorkflowRegistry();
+	private readonly registrarState = new PalantirMemoryWorkflowState();
+	private readonly disposersByPlugin = new Map<string, PalantirDispose[]>();
+	private readonly responseCollector: PalantirAgentResponseCollector;
+	private readonly activeRuns = new Map<string, ActiveRun>();
 
-	constructor(private readonly input: PalantirRuntimeInput) {
-		this.responseCollector = input.responseCollector ?? new AgentResponseCollector();
+	constructor(private readonly input: PalantirEngineInput) {
+		this.responseCollector = input.responseCollector ?? new PalantirAgentResponseCollector();
 	}
 
-	registerPlugin<TManifest extends AnyWorkflowPluginManifest>(plugin: WorkflowPlugin<TManifest>): WorkflowDispose {
+	registerPlugin<TManifest extends PalantirAnyWorkflowPluginManifest>(plugin: PalantirWorkflowPlugin<TManifest>): PalantirDispose {
 		this.disposePlugin(plugin.manifest.id);
 		const implementation = this.resolvePluginImplementation(plugin.implementation);
 		const disposers = Object.entries(plugin.manifest.workflows).map(([key, workflow]) => {
@@ -96,82 +96,82 @@ export class PalantirRuntime {
 		return this.registry.list();
 	}
 
-	visibleWorkflowEntries(): RegisteredWorkflow[] {
+	visibleWorkflowEntries(): PalantirRegisteredWorkflow[] {
 		return this.registry.launchableEntries();
 	}
 
-	private resolvePluginImplementation<TManifest extends AnyWorkflowPluginManifest>(
-		implementationInput: WorkflowPluginImplementationInput<TManifest>,
-	): WorkflowPluginImplementation<TManifest> {
+	private resolvePluginImplementation<TManifest extends PalantirAnyWorkflowPluginManifest>(
+		implementationInput: PalantirWorkflowPluginImplementationInput<TManifest>,
+	): PalantirWorkflowPluginImplementation<TManifest> {
 		return typeof implementationInput === "function"
 			? implementationInput({ cwd: this.input.cwd, state: this.registrarState })
 			: implementationInput;
 	}
 
-	async runWorkflow<TWorkflow extends AnyWorkflowDeclaration>(
+	async runWorkflow<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		params: unknown,
-		options: WorkflowLaunchOptions<TWorkflow> | AnyWorkflowLaunchOptions | undefined,
-	): Promise<WorkflowLaunchResult> {
-		const session = await this.createRuntime(workflow, params, options);
+		options: PalantirRunStartOptions<TWorkflow> | PalantirAnyRunStartOptions | undefined,
+	): Promise<PalantirRunResult> {
+		const session = await this.createRunSession(workflow, params, options);
 		return this.runScheduler(session, {
 			workflow,
 			params,
 			configOverride: options?.configOverride,
-			cwd: session.runtime.cwd,
+			cwd: session.run.cwd,
 			env: options?.env ?? {},
 		});
 	}
 
-	async listRunCheckpoints(path: string): Promise<WorkflowRunCheckpoint[]> {
-		const runRoot = await resolveWorkflowRunRoot(this.input.cwd, path);
-		return (await WorkflowRunStore.open(runRoot)).listCheckpoints();
+	async listRunCheckpoints(path: string): Promise<PalantirRunCheckpoint[]> {
+		const runRoot = await resolveRunRoot(this.input.cwd, path);
+		return (await PalantirRunStore.open(runRoot)).listCheckpoints();
 	}
 
-	async getActiveGate(path: string): Promise<WorkflowInterruptedLaunchResult> {
-		const runRoot = await resolveWorkflowRunRoot(this.input.cwd, path);
-		const state = (await WorkflowRuntimeStateStore.load(runRoot)).currentState();
-		if (state.status !== "interrupted") throw new Error(`Workflow run is not interrupted: ${runRoot}`);
+	async getActiveGate(path: string): Promise<PalantirInterruptedRunResult> {
+		const runRoot = await resolveRunRoot(this.input.cwd, path);
+		const state = (await PalantirRunStateStore.load(runRoot)).currentState();
+		if (state.status !== "interrupted") throw new Error(`Run is not interrupted: ${runRoot}`);
 		const current = state.current;
-		if (!current) throw new Error(`Workflow run is not resumable: ${runRoot}`);
+		if (!current) throw new Error(`Run is not resumable: ${runRoot}`);
 		const workflow = this.registry.workflowById(current.workflowId);
 		if (!workflow) throw new Error(`Unknown workflow for interrupted run: ${current.workflowId}`);
 		return interruptedLaunchResult({ id: state.id, name: state.name, workspace: state.workspace, cwd: current.cwd }, workflow, current.params, current.gate?.description);
 	}
 
-	async rollbackRun(path: string, checkpointId: string): Promise<WorkflowRunInfo> {
-		const runRoot = await resolveWorkflowRunRoot(this.input.cwd, path);
-		const lease = await WorkflowRunLease.acquire(runRoot);
+	async rollbackRun(path: string, checkpointId: string): Promise<PalantirRunInfo> {
+		const runRoot = await resolveRunRoot(this.input.cwd, path);
+		const lease = await PalantirRunLease.acquire(runRoot);
 		try {
-			const runStore = await WorkflowRunStore.open(runRoot);
+			const runStore = await PalantirRunStore.open(runRoot);
 			await runStore.restoreSnapshot(checkpointId);
-			return getWorkflowRunInfo(runRoot);
+			return getRunInfo(runRoot);
 		} finally {
 			await lease.release();
 		}
 	}
 
-	async resumeWorkflow(path: string, params?: unknown): Promise<WorkflowLaunchResult> {
-		const runRoot = await resolveWorkflowRunRoot(this.input.cwd, path);
-		const initialStateStore = await WorkflowRuntimeStateStore.load(runRoot);
+	async resumeWorkflow(path: string, params?: unknown): Promise<PalantirRunResult> {
+		const runRoot = await resolveRunRoot(this.input.cwd, path);
+		const initialStateStore = await PalantirRunStateStore.load(runRoot);
 		const initialState = initialStateStore.currentState();
-		if (initialState.status === "completed") throw new Error(`Workflow run is already completed: ${runRoot}`);
+		if (initialState.status === "completed") throw new Error(`Run is already completed: ${runRoot}`);
 		if (initialState.status === "interrupted" && params === undefined) throw new Error(`Interrupted workflow resume requires params: ${runRoot}`);
 
-		const lease = await WorkflowRunLease.acquire(runRoot);
+		const lease = await PalantirRunLease.acquire(runRoot);
 		let isLeaseOwnedByScheduler = false;
 		try {
-			if (initialState.status === "running") await (await WorkflowRunStore.open(runRoot)).restoreCurrentSnapshot();
-			const session = await this.openRuntime(runRoot, lease);
+			if (initialState.status === "running") await (await PalantirRunStore.open(runRoot)).restoreCurrentSnapshot();
+			const session = await this.openRunSession(runRoot, lease);
 			const state = session.state.currentState();
 			const current = state.current;
-			if (!current) throw new Error(`Workflow run is not resumable: ${runRoot}`);
+			if (!current) throw new Error(`Run is not resumable: ${runRoot}`);
 			const workflow = this.registry.workflowById(current.workflowId);
 			if (!workflow) throw new Error(`Unknown workflow for resumed run: ${current.workflowId}`);
 			if (state.status === "interrupted") {
 				await session.state.replaceCurrentParams(workflow.params.parse(params));
 				const resumedCurrent = session.state.currentState().current;
-				if (!resumedCurrent) throw new Error(`Workflow run is not resumable: ${runRoot}`);
+				if (!resumedCurrent) throw new Error(`Run is not resumable: ${runRoot}`);
 				isLeaseOwnedByScheduler = true;
 				return this.runScheduler(session, toWorkflowStep(workflow, resumedCurrent));
 			}
@@ -182,46 +182,46 @@ export class PalantirRuntime {
 		}
 	}
 
-	private async runScheduler(session: WorkflowRuntimeSession, initialStep: WorkflowStep): Promise<WorkflowLaunchResult> {
+	private async runScheduler(session: RunSession, initialStep: WorkflowStep): Promise<PalantirRunResult> {
 		let currentStep = initialStep;
 		try {
 			for (let step = 1; step <= 1_000; step++) {
-				throwIfWorkflowRunAborted(session.activeRun);
-				const stepRuntime = session.runtime.with({ cwd: currentStep.cwd, env: currentStep.env });
+				throwIfRunAborted(session.activeRun);
+				const stepRuntime = session.run.with({ cwd: currentStep.cwd, env: currentStep.env });
 				if (shouldPauseForGate(currentStep)) {
 					const parsedParams = currentStep.workflow.params.parse(currentStep.params);
 					const description = await this.registry.describeGate(currentStep.workflow, stepRuntime, parsedParams, currentStep.configOverride);
 					await session.state.interruptCurrent(parsedParams, description);
-					await recordRuntimeEvent(session, { type: "run.interrupted", workflowId: currentStep.workflow.id });
-					await commitRuntimeBoundary(session, `run interrupted: ${currentStep.workflow.id}`);
+					await recordRunEvent(session, { type: "run.interrupted", workflowId: currentStep.workflow.id });
+					await commitRunBoundary(session, `run interrupted: ${currentStep.workflow.id}`);
 					return interruptedLaunchResult({ id: stepRuntime.id, name: session.state.currentState().name, workspace: stepRuntime.workspace, cwd: stepRuntime.cwd }, currentStep.workflow, parsedParams, description);
 				}
-				await session.state.startStep(toRuntimeStateStep(currentStep));
+				await session.state.startStep(toRunStateStep(currentStep));
 				const stepResult = await this.executeWorkflowStep(session, currentStep, stepRuntime);
-				throwIfWorkflowRunAborted(session.activeRun);
+				throwIfRunAborted(session.activeRun);
 				if (stepResult.type === "complete") {
 					await session.state.completeRun(stepResult.workflow.id, stepResult.metadata);
-					await recordRuntimeEvent(session, { type: "run.completed", workflowId: stepResult.workflow.id, metadata: stepResult.metadata });
-					await commitRuntimeBoundary(session, `run completed: ${stepResult.workflow.id}`);
+					await recordRunEvent(session, { type: "run.completed", workflowId: stepResult.workflow.id, metadata: stepResult.metadata });
+					await commitRunBoundary(session, `run completed: ${stepResult.workflow.id}`);
 					return { status: "completed", id: stepRuntime.id, name: session.state.currentState().name, workspace: stepRuntime.workspace, cwd: stepRuntime.cwd, workflowId: stepResult.workflow.id, metadata: stepResult.metadata };
 				}
 				if (stepResult.type === "fail") {
 					await session.state.failRun(stepResult.workflow.id, stepResult.metadata);
-					await recordRuntimeEvent(session, { type: "run.failed", workflowId: stepResult.workflow.id, metadata: stepResult.metadata });
-					await commitRuntimeBoundary(session, `run failed: ${stepResult.workflow.id}`);
+					await recordRunEvent(session, { type: "run.failed", workflowId: stepResult.workflow.id, metadata: stepResult.metadata });
+					await commitRunBoundary(session, `run failed: ${stepResult.workflow.id}`);
 					return { status: "failed", id: stepRuntime.id, name: session.state.currentState().name, workspace: stepRuntime.workspace, cwd: stepRuntime.cwd, workflowId: stepResult.workflow.id, metadata: stepResult.metadata };
 				}
 				const nextStep = this.nextWorkflowStep(stepResult, stepRuntime);
-				await session.state.completeWithNext(currentStep.workflow.id, toRuntimeStateStep(nextStep));
-				await recordRuntimeEvent(session, { type: "run.transitioned", fromWorkflowId: currentStep.workflow.id, toWorkflowId: nextStep.workflow.id });
-				await commitRuntimeBoundary(session, `transition: ${currentStep.workflow.id} -> ${nextStep.workflow.id}`);
+				await session.state.completeWithNext(currentStep.workflow.id, toRunStateStep(nextStep));
+				await recordRunEvent(session, { type: "run.transitioned", fromWorkflowId: currentStep.workflow.id, toWorkflowId: nextStep.workflow.id });
+				await commitRunBoundary(session, `transition: ${currentStep.workflow.id} -> ${nextStep.workflow.id}`);
 				currentStep = nextStep;
 			}
-			throw new Error("Workflow run exceeded 1000 scheduler steps");
+			throw new Error("Run exceeded 1000 scheduler steps");
 		} catch (error) {
 			await session.state.failCurrent(errorMessage(error));
-			await recordRuntimeEvent(session, { type: "run.failed", workflowId: currentStep.workflow.id, error: errorMessage(error) });
-			await commitRuntimeBoundary(session, `run failed: ${currentStep.workflow.id}`);
+			await recordRunEvent(session, { type: "run.failed", workflowId: currentStep.workflow.id, error: errorMessage(error) });
+			await commitRunBoundary(session, `run failed: ${currentStep.workflow.id}`);
 			throw error;
 		} finally {
 			await session.lease.release();
@@ -229,60 +229,60 @@ export class PalantirRuntime {
 		}
 	}
 
-	private async executeWorkflowStep(session: WorkflowRuntimeSession, step: WorkflowStep, runtime: WorkflowRuntime): Promise<WorkflowStepResult> {
+	private async executeWorkflowStep(session: RunSession, step: WorkflowStep, run: PalantirRun): Promise<PalantirWorkflowStepResult> {
 		const boundaryRef = await session.runStore.currentSnapshotRef();
 		const logBoundary = session.logger.boundary();
 		const startedAtMs = Date.now();
 		try {
-			await assertWorkspaceBoundary(session, runtime.workspace);
-			await recordRuntimeEvent(session, { type: "workflow.started", workflowId: step.workflow.id });
-			const result = await this.registry.execute(step.workflow, runtime, step.params, step.configOverride);
-			await assertWorkspaceBoundary(session, runtime.workspace);
+			await assertWorkspaceBoundary(session, run.workspace);
+			await recordRunEvent(session, { type: "workflow.started", workflowId: step.workflow.id });
+			const result = await this.registry.execute(step.workflow, run, step.params, step.configOverride);
+			await assertWorkspaceBoundary(session, run.workspace);
 			const durationMs = Date.now() - startedAtMs;
-			if (result.type === "complete") await recordRuntimeEvent(session, { type: "workflow.completed", workflowId: result.workflow.id, durationMs, metadata: result.metadata });
-			else if (result.type === "fail") await recordRuntimeEvent(session, { type: "workflow.failed", workflowId: result.workflow.id, durationMs, metadata: result.metadata });
-			else await recordRuntimeEvent(session, { type: "workflow.transitioned", fromWorkflowId: step.workflow.id, toWorkflowId: result.workflowId, durationMs });
+			if (result.type === "complete") await recordRunEvent(session, { type: "workflow.completed", workflowId: result.workflow.id, durationMs, metadata: result.metadata });
+			else if (result.type === "fail") await recordRunEvent(session, { type: "workflow.failed", workflowId: result.workflow.id, durationMs, metadata: result.metadata });
+			else await recordRunEvent(session, { type: "workflow.transitioned", fromWorkflowId: step.workflow.id, toWorkflowId: result.workflowId, durationMs });
 			return result;
 		} catch (error) {
-			await rollbackRuntimeBoundary(session, boundaryRef);
-			rollbackRuntimeLogBoundary(session, logBoundary);
-			await recordRuntimeEvent(session, { type: "workflow.failed", workflowId: step.workflow.id, durationMs: Date.now() - startedAtMs, error: errorMessage(error) });
+			await rollbackRunBoundary(session, boundaryRef);
+			rollbackRunLogBoundary(session, logBoundary);
+			await recordRunEvent(session, { type: "workflow.failed", workflowId: step.workflow.id, durationMs: Date.now() - startedAtMs, error: errorMessage(error) });
 			throw error;
 		}
 	}
 
-	private nextWorkflowStep(next: WorkflowNext, runtime: WorkflowRuntime): WorkflowStep {
+	private nextWorkflowStep(next: PalantirRunNext, run: PalantirRun): WorkflowStep {
 		const workflow = this.registry.workflowById(next.workflowId);
 		if (!workflow) throw new Error(`Unknown next workflow: ${next.workflowId}`);
 		return {
 			workflow,
 			params: next.params,
 			configOverride: next.configOverride,
-			cwd: next.cwd ?? runtime.cwd,
+			cwd: next.cwd ?? run.cwd,
 			env: next.env ?? {},
 			gate: this.input.gateMode === "pause" && workflow.gate ? { status: "pending" } : undefined,
 		};
 	}
 
-	private async createRuntime<TWorkflow extends AnyWorkflowDeclaration>(
+	private async createRunSession<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		params: unknown,
-		options: WorkflowLaunchOptions<TWorkflow> | AnyWorkflowLaunchOptions | undefined,
-	): Promise<WorkflowRuntimeSession> {
+		options: PalantirRunStartOptions<TWorkflow> | PalantirAnyRunStartOptions | undefined,
+	): Promise<RunSession> {
 		const id = options?.id ?? randomUUID();
 		const name = options?.name ?? id;
 		const runRoot = defaultRunRoot(this.input.cwd, id);
-		const currentRoot = workflowRunCurrentRoot(runRoot);
+		const currentRoot = runCurrentRoot(runRoot);
 		const workspace = join(currentRoot, "workspace");
 		const cwd = options?.cwd ? resolveFromWorkspace(workspace, options.cwd) : workspace;
 		const startedAt = new Date().toISOString();
 		await mkdir(runRoot, { recursive: true });
-		const lease = await WorkflowRunLease.acquire(runRoot);
+		const lease = await PalantirRunLease.acquire(runRoot);
 		const activeRun = this.startActiveRun(runRoot);
 		try {
-			const runStore = await WorkflowRunStore.initialize(runRoot);
+			const runStore = await PalantirRunStore.initialize(runRoot);
 			await mkdir(workspace, { recursive: true });
-			const logger = new WorkflowRunLogger(join(currentRoot, MANIFEST_FILE_NAME), {
+			const logger = new PalantirRunLogger(join(currentRoot, MANIFEST_FILE_NAME), {
 				id,
 				name,
 				workflowId: workflow.id,
@@ -291,18 +291,18 @@ export class PalantirRuntime {
 				initialCwd: cwd,
 				startedAt,
 			});
-			const runtime = await this.buildRuntime({ id, currentRoot, workspace, cwd, env: options?.env ?? {}, signal: activeRun.controller.signal, logger });
-			const state = await WorkflowRuntimeStateStore.create(runRoot, {
+			const run = await this.buildRun({ id, currentRoot, workspace, cwd, env: options?.env ?? {}, signal: activeRun.controller.signal, logger });
+			const state = await PalantirRunStateStore.create(runRoot, {
 				id,
 				name,
-				rootWorkflowId: workflow.id,
+				entrypointWorkflowId: workflow.id,
 				workspace,
 				current: { workflowId: workflow.id, params, configOverride: options?.configOverride, cwd, env: options?.env ?? {} },
 				startedAt,
 			});
-			const session = { runRoot, runtime, state, lease, runStore, logger, activeRun };
+			const session = { runRoot, run, state, lease, runStore, logger, activeRun };
 			await logger.record({ type: "run.started", workflowId: workflow.id, cwd, workspace });
-			await commitRuntimeBoundary(session, `run started: ${workflow.id}`);
+			await commitRunBoundary(session, `run started: ${workflow.id}`);
 			return session;
 		} catch (error) {
 			await lease.release();
@@ -311,41 +311,41 @@ export class PalantirRuntime {
 		}
 	}
 
-	private async openRuntime(runRoot: string, lease: WorkflowRunLease): Promise<WorkflowRuntimeSession> {
+	private async openRunSession(runRoot: string, lease: PalantirRunLease): Promise<RunSession> {
 		const activeRun = this.startActiveRun(runRoot);
 		try {
-			const state = await WorkflowRuntimeStateStore.load(runRoot);
+			const state = await PalantirRunStateStore.load(runRoot);
 			const currentState = state.currentState();
-			if (currentState.status === "completed") throw new Error(`Workflow run is already completed: ${runRoot}`);
-			const runStore = await WorkflowRunStore.open(runRoot);
-			const currentRoot = workflowRunCurrentRoot(runRoot);
-			const logger = await WorkflowRunLogger.load(join(currentRoot, MANIFEST_FILE_NAME));
+			if (currentState.status === "completed") throw new Error(`Run is already completed: ${runRoot}`);
+			const runStore = await PalantirRunStore.open(runRoot);
+			const currentRoot = runCurrentRoot(runRoot);
+			const logger = await PalantirRunLogger.load(join(currentRoot, MANIFEST_FILE_NAME));
 			const cwd = currentState.current?.cwd ?? currentState.workspace;
 			const env = currentState.current?.env ?? {};
-			const runtime = await this.buildRuntime({ id: currentState.id, currentRoot, workspace: currentState.workspace, cwd, env, signal: activeRun.controller.signal, logger });
+			const run = await this.buildRun({ id: currentState.id, currentRoot, workspace: currentState.workspace, cwd, env, signal: activeRun.controller.signal, logger });
 			await logger.record({ type: "run.resumed", workflowId: currentState.current?.workflowId, cwd });
-			return { runRoot, runtime, state, lease, runStore, logger, activeRun };
+			return { runRoot, run, state, lease, runStore, logger, activeRun };
 		} catch (error) {
 			this.failActiveRun(runRoot, activeRun);
 			throw error;
 		}
 	}
 
-	private async buildRuntime(input: {
+	private async buildRun(input: {
 		readonly id: string;
 		readonly currentRoot: string;
 		readonly workspace: string;
 		readonly cwd: string;
 		readonly env: Record<string, string>;
 		readonly signal: AbortSignal;
-		readonly logger: WorkflowRunLogger;
-	}): Promise<WorkflowRuntime> {
+		readonly logger: PalantirRunLogger;
+	}): Promise<PalantirRun> {
 		const artifactsRoot = join(input.currentRoot, "artifacts");
 		const logsRoot = join(input.currentRoot, "logs");
 		await mkdir(input.workspace, { recursive: true });
 		await mkdir(artifactsRoot, { recursive: true });
 		await mkdir(logsRoot, { recursive: true });
-		return new DefaultWorkflowRuntime({
+		return new PalantirRunContext({
 			id: input.id,
 			runRoot: input.currentRoot,
 			workspace: input.workspace,
@@ -354,15 +354,15 @@ export class PalantirRuntime {
 			signal: input.signal,
 			agentDir: this.input.agentDir,
 			responseCollector: this.responseCollector,
-			state: new JsonWorkflowState(join(input.currentRoot, STATE_FILE_NAME)),
+			state: new PalantirJsonWorkflowState(join(input.currentRoot, STATE_FILE_NAME)),
 			logger: input.logger,
-			artifacts: new WorkflowArtifacts(artifactsRoot),
-			logs: new WorkflowRunLogs(logsRoot),
+			artifacts: new PalantirArtifacts(artifactsRoot),
+			logs: new PalantirRunLogs(logsRoot),
 		});
 	}
 
-	private startActiveRun(runRoot: string): ActiveWorkflowRun {
-		if (this.activeRuns.has(runRoot)) throw new Error(`Workflow run is already active in this runtime: ${runRoot}`);
+	private startActiveRun(runRoot: string): ActiveRun {
+		if (this.activeRuns.has(runRoot)) throw new Error(`Run is already active in this engine: ${runRoot}`);
 		const controller = new AbortController();
 		let finish: () => void;
 		const finished = new Promise<void>((resolvePromise) => {
@@ -371,7 +371,7 @@ export class PalantirRuntime {
 		const abortFromParent = () => controller.abort(this.input.signal?.reason);
 		if (this.input.signal?.aborted) abortFromParent();
 		else this.input.signal?.addEventListener("abort", abortFromParent, { once: true });
-		const activeRun: ActiveWorkflowRun = {
+		const activeRun: ActiveRun = {
 			controller,
 			finished,
 			finish: () => finish(),
@@ -381,14 +381,14 @@ export class PalantirRuntime {
 		return activeRun;
 	}
 
-	private finishActiveRun(runRoot: string, activeRun: ActiveWorkflowRun): void {
+	private finishActiveRun(runRoot: string, activeRun: ActiveRun): void {
 		if (this.activeRuns.get(runRoot) !== activeRun) return;
 		this.activeRuns.delete(runRoot);
 		activeRun.dispose();
 		activeRun.finish();
 	}
 
-	private failActiveRun(runRoot: string, activeRun: ActiveWorkflowRun): void {
+	private failActiveRun(runRoot: string, activeRun: ActiveRun): void {
 		if (this.activeRuns.get(runRoot) === activeRun) this.activeRuns.delete(runRoot);
 		activeRun.dispose();
 		activeRun.finish();
@@ -414,7 +414,7 @@ function resolveFromWorkspace(workspace: string, path: string): string {
 	return resolvedPath;
 }
 
-function toWorkflowStep(workflow: AnyWorkflowDeclaration, step: NonNullable<WorkflowRuntimeState["current"]>): WorkflowStep {
+function toWorkflowStep(workflow: PalantirAnyWorkflowDeclaration, step: NonNullable<PalantirRunState["current"]>): WorkflowStep {
 	return {
 		workflow,
 		params: step.params,
@@ -425,7 +425,7 @@ function toWorkflowStep(workflow: AnyWorkflowDeclaration, step: NonNullable<Work
 	};
 }
 
-function toRuntimeStateStep(step: WorkflowStep): NonNullable<WorkflowRuntimeState["current"]> {
+function toRunStateStep(step: WorkflowStep): NonNullable<PalantirRunState["current"]> {
 	return {
 		workflowId: step.workflow.id,
 		params: step.params,
@@ -440,57 +440,57 @@ function shouldPauseForGate(step: WorkflowStep): boolean {
 	return step.gate?.status === "pending" && step.workflow.gate !== undefined;
 }
 
-function throwIfWorkflowRunAborted(activeRun: ActiveWorkflowRun): void {
+function throwIfRunAborted(activeRun: ActiveRun): void {
 	if (!activeRun.controller.signal.aborted) return;
 	const reason: unknown = activeRun.controller.signal.reason;
 	if (reason instanceof Error) throw reason;
-	throw new Error(typeof reason === "string" && reason.length > 0 ? reason : "Workflow run aborted");
+	throw new Error(typeof reason === "string" && reason.length > 0 ? reason : "Run aborted");
 }
 
-function interruptedLaunchResult(runtime: WorkflowRunIdentity, workflow: AnyWorkflowDeclaration, params: unknown, description: string | undefined): WorkflowInterruptedLaunchResult {
+function interruptedLaunchResult(run: RunIdentity, workflow: PalantirAnyWorkflowDeclaration, params: unknown, description: string | undefined): PalantirInterruptedRunResult {
 	if (!workflow.gate) throw new Error(`Workflow is not gated: ${workflow.id}`);
 	if (!description) throw new Error(`Interrupted workflow is missing gate description: ${workflow.id}`);
 	return {
 		status: "interrupted",
-		id: runtime.id,
-		name: runtime.name,
-		workspace: runtime.workspace,
-		cwd: runtime.cwd,
+		id: run.id,
+		name: run.name,
+		workspace: run.workspace,
+		cwd: run.cwd,
 		workflowId: workflow.id,
 		params,
 		gate: { description, fields: workflow.gate.fields },
 	};
 }
 
-type WorkflowRunIdentity = {
+type RunIdentity = {
 	readonly id: string;
 	readonly name: string;
 	readonly workspace: string;
 	readonly cwd: string;
 };
 
-async function recordRuntimeEvent(
-	session: WorkflowRuntimeSession,
+async function recordRunEvent(
+	session: RunSession,
 	event: { readonly type: string; readonly [key: string]: unknown },
 ): Promise<void> {
 	await session.logger.record(event);
 }
 
-async function commitRuntimeBoundary(session: WorkflowRuntimeSession, message: string): Promise<void> {
+async function commitRunBoundary(session: RunSession, message: string): Promise<void> {
 	await session.lease.assertOwned();
 	await session.runStore.snapshotCurrent(message);
 }
 
-async function rollbackRuntimeBoundary(session: WorkflowRuntimeSession, ref: string): Promise<void> {
+async function rollbackRunBoundary(session: RunSession, ref: string): Promise<void> {
 	await session.lease.assertOwned();
 	await session.runStore.restoreSnapshot(ref);
 }
 
-function rollbackRuntimeLogBoundary(session: WorkflowRuntimeSession, boundary: number): void {
+function rollbackRunLogBoundary(session: RunSession, boundary: number): void {
 	session.logger.rollback(boundary);
 }
 
-async function assertWorkspaceBoundary(session: WorkflowRuntimeSession, workspace: string): Promise<void> {
+async function assertWorkspaceBoundary(session: RunSession, workspace: string): Promise<void> {
 	await session.lease.assertOwned();
 	await session.runStore.assertWorkspaceCanBeSnapshotted(workspace);
 }

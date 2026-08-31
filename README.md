@@ -2,7 +2,7 @@
 
 Typed, resumable workflow plugins for coding agents.
 
-`palantir` owns the workflow API and daemonless runtime. The runtime is executed
+`palantir` owns the workflow API and daemonless run engine. The engine is executed
 through the JSON-native `palantir` CLI; host applications embed `palantir/client`,
 not the scheduler.
 
@@ -17,10 +17,10 @@ npm install github:vimhead/palantir
 - Detached workflow execution with `palantir execute-run <run-id>`.
 - JSON command output and NDJSON log/event streams.
 - Human-readable run names such as `quiet-river-lantern`.
-- Explicit workflow controls: `runtime.next`, `runtime.complete`, `runtime.fail`.
+- Explicit workflow controls: `run.next`, `run.complete`, `run.fail`.
 - Resumable runs under `.palantir/runs/<run-id>`.
 - CAS checkpoints for rollback and resume.
-- Workspace-only access through `runtime.workspace`, `runtime.cwd`, and `runtime.path(...)`.
+- Workspace-only access through `run.workspace`, `run.cwd`, and `run.path(...)`.
 - Typed state, artifacts, command logs, and Pi SDK agent calls.
 - Gates that pause before a target workflow and edit normal params.
 
@@ -56,12 +56,12 @@ qualified id.
 
 ```ts
 import { z } from "zod";
-import type { WorkflowDefinition } from "palantir";
+import type { PalantirWorkflowDefinition } from "palantir";
 
 export const planWorkflow = {
   displayTitle: "Plan",
   params: z.object({ task: z.string() }),
-} as const satisfies WorkflowDefinition;
+} as const satisfies PalantirWorkflowDefinition;
 ```
 
 Explicit ids are allowed only when fully qualified with the plugin id.
@@ -71,7 +71,7 @@ export const legacyWorkflow = {
   id: "example.oldPlan",
   displayTitle: "Plan",
   params,
-} as const satisfies WorkflowDefinition;
+} as const satisfies PalantirWorkflowDefinition;
 ```
 
 ## Define a manifest
@@ -107,10 +107,10 @@ import { manifest } from "./manifest.ts";
 export default definePlugin(manifest, {
   workflows: {
     plan: {
-      async execute(runtime, params) {
-        const ref = await runtime.artifacts.write("plan.md", params.task);
-        await runtime.state.set(manifest.states.planning.planArtifact, ref);
-        return runtime.complete({
+      async execute(run, params) {
+        const ref = await run.artifacts.write("plan.md", params.task);
+        await run.state.set(manifest.states.planning.planArtifact, ref);
+        return run.complete({
           summary: "Plan created.",
           artifacts: { plan: ref },
         });
@@ -125,17 +125,17 @@ export default definePlugin(manifest, {
 Workflows never call each other directly. They return scheduler controls.
 
 ```ts
-return runtime.next(manifest.workflows.implement, {
+return run.next(manifest.workflows.implement, {
   task: params.task,
   iteration: 1,
 });
 
-return runtime.complete({ summary: "Accepted after review." });
+return run.complete({ summary: "Accepted after review." });
 
-return runtime.fail({ summary: "Blocked by missing credentials." });
+return run.fail({ summary: "Blocked by missing credentials." });
 ```
 
-Outcome metadata is persisted in `current/runtime-state.json`. Keep it small:
+Outcome metadata is persisted in `current/run-state.json`. Keep it small:
 use it as a table of contents for artifacts, logs, and state.
 
 ## Run workflows
@@ -199,7 +199,7 @@ export const reviewRouterWorkflow = {
     fields: ["decision", "notes"] as const,
   },
   params: reviewRouterParamsSchema,
-} as const satisfies WorkflowDefinition;
+} as const satisfies PalantirWorkflowDefinition;
 ```
 
 Dynamic gate descriptions live in the implementation and are persisted when the
@@ -208,8 +208,8 @@ run pauses.
 ```ts
 reviewRouter: {
   gate: {
-    async describe(runtime, params) {
-      const ref = await runtime.state.get(manifest.states.planning.planArtifact);
+    async describe(run, params) {
+      const ref = await run.state.get(manifest.states.planning.planArtifact);
       return `Review ${params.diffArtifact.path} against ${ref.path}.`;
     },
   },
@@ -231,7 +231,7 @@ Each run is split into immutable CAS storage and the current materialized state.
     refs/current
   current/
     checkpoints.json
-    runtime-state.json
+    run-state.json
     manifest.json
     state.json
     logs/

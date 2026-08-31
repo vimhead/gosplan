@@ -1,15 +1,15 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
-import type { AnyWorkflowDeclaration, WorkflowCallOptions, WorkflowOutcomeMetadata, WorkflowParamsInput, WorkflowRuntime } from "../api.ts";
-import type { AgentResponseCollector } from "./agent-response-tool.ts";
-import type { WorkflowArtifacts } from "./artifacts.ts";
-import { WorkflowAgentRunner } from "./agents.ts";
-import { WorkflowCommandRunner } from "./commands.ts";
-import type { WorkflowRunLogs } from "./logs.ts";
-import type { WorkflowRunLogger } from "./run-log.ts";
-import type { JsonWorkflowState } from "./state-store.ts";
+import type { PalantirAnyWorkflowDeclaration, PalantirWorkflowCallOptions, PalantirRunOutcomeMetadata, PalantirWorkflowParamsInput, PalantirRun } from "../api.ts";
+import type { PalantirAgentResponseCollector } from "./agent-response-tool.ts";
+import type { PalantirArtifacts } from "./artifacts.ts";
+import { PalantirAgentRunner } from "./agents.ts";
+import { PalantirCommandRunner } from "./commands.ts";
+import type { PalantirRunLogs } from "./logs.ts";
+import type { PalantirRunLogger } from "./run-log.ts";
+import type { PalantirJsonWorkflowState } from "./state-store.ts";
 
-type DefaultWorkflowRuntimeInput = {
+type DefaultPalantirRunInput = {
 	readonly id: string;
 	readonly runRoot: string;
 	readonly workspace: string;
@@ -19,24 +19,24 @@ type DefaultWorkflowRuntimeInput = {
 	readonly model?: CreateAgentSessionOptions["model"];
 	readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
 	readonly agentDir?: string;
-	readonly responseCollector: AgentResponseCollector;
-	readonly state: JsonWorkflowState;
-	readonly logger: WorkflowRunLogger;
-	readonly artifacts: WorkflowArtifacts;
-	readonly logs: WorkflowRunLogs;
+	readonly responseCollector: PalantirAgentResponseCollector;
+	readonly state: PalantirJsonWorkflowState;
+	readonly logger: PalantirRunLogger;
+	readonly artifacts: PalantirArtifacts;
+	readonly logs: PalantirRunLogs;
 };
 
-export class DefaultWorkflowRuntime implements WorkflowRuntime {
-	readonly state: WorkflowRuntime["state"];
-	readonly artifacts: WorkflowRuntime["artifacts"];
-	readonly logs: WorkflowRuntime["logs"];
-	readonly commands: WorkflowRuntime["commands"];
-	readonly agents: WorkflowRuntime["agents"];
+export class PalantirRunContext implements PalantirRun {
+	readonly state: PalantirRun["state"];
+	readonly artifacts: PalantirRun["artifacts"];
+	readonly logs: PalantirRun["logs"];
+	readonly commands: PalantirRun["commands"];
+	readonly agents: PalantirRun["agents"];
 	readonly id: string;
 	readonly workspace: string;
 	readonly cwd: string;
 
-	constructor(private readonly input: DefaultWorkflowRuntimeInput) {
+	constructor(private readonly input: DefaultPalantirRunInput) {
 		this.id = input.id;
 		this.workspace = input.workspace;
 		this.cwd = input.cwd;
@@ -47,7 +47,7 @@ export class DefaultWorkflowRuntime implements WorkflowRuntime {
 		};
 		this.commands = {
 			run: (commandInput) =>
-				new WorkflowCommandRunner({
+				new PalantirCommandRunner({
 					workspace: this.workspace,
 					cwd: this.cwd,
 					env: this.input.env,
@@ -62,8 +62,8 @@ export class DefaultWorkflowRuntime implements WorkflowRuntime {
 		};
 	}
 
-	private createAgentRunner(): WorkflowAgentRunner {
-		return new WorkflowAgentRunner({
+	private createAgentRunner(): PalantirAgentRunner {
+		return new PalantirAgentRunner({
 			id: this.id,
 			runRoot: this.input.runRoot,
 			workspace: this.workspace,
@@ -78,8 +78,8 @@ export class DefaultWorkflowRuntime implements WorkflowRuntime {
 		});
 	}
 
-	with(options: { cwd?: string; env?: Record<string, string> }): WorkflowRuntime {
-		return new DefaultWorkflowRuntime({
+	with(options: { cwd?: string; env?: Record<string, string> }): PalantirRun {
+		return new PalantirRunContext({
 			...this.input,
 			cwd: options.cwd ? this.resolveFromCwd(options.cwd) : this.cwd,
 			env: { ...this.input.env, ...(options.env ?? {}) },
@@ -90,17 +90,17 @@ export class DefaultWorkflowRuntime implements WorkflowRuntime {
 		return this.resolveFromCwd(relativePath);
 	}
 
-	next<TWorkflow extends AnyWorkflowDeclaration>(
+	next<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
-		params: WorkflowParamsInput<TWorkflow>,
-		options?: WorkflowCallOptions<TWorkflow>,
-	): ReturnType<WorkflowRuntime["next"]>;
-	next(workflowId: string, params: unknown, options?: { readonly configOverride?: unknown }): ReturnType<WorkflowRuntime["next"]>;
+		params: PalantirWorkflowParamsInput<TWorkflow>,
+		options?: PalantirWorkflowCallOptions<TWorkflow>,
+	): ReturnType<PalantirRun["next"]>;
+	next(workflowId: string, params: unknown, options?: { readonly configOverride?: unknown }): ReturnType<PalantirRun["next"]>;
 	next(
-		workflow: AnyWorkflowDeclaration | string,
+		workflow: PalantirAnyWorkflowDeclaration | string,
 		params: unknown,
 		options?: { readonly configOverride?: unknown },
-	): ReturnType<WorkflowRuntime["next"]> {
+	): ReturnType<PalantirRun["next"]> {
 		return {
 			type: "next",
 			workflowId: typeof workflow === "string" ? workflow : workflow.id,
@@ -111,11 +111,11 @@ export class DefaultWorkflowRuntime implements WorkflowRuntime {
 		};
 	}
 
-	complete(metadata?: WorkflowOutcomeMetadata): ReturnType<WorkflowRuntime["complete"]> {
+	complete(metadata?: PalantirRunOutcomeMetadata): ReturnType<PalantirRun["complete"]> {
 		return { type: "complete", metadata };
 	}
 
-	fail(metadata: WorkflowOutcomeMetadata & { readonly summary: string }): ReturnType<WorkflowRuntime["fail"]> {
+	fail(metadata: PalantirRunOutcomeMetadata & { readonly summary: string }): ReturnType<PalantirRun["fail"]> {
 		return { type: "fail", metadata };
 	}
 

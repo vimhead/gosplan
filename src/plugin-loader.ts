@@ -3,10 +3,10 @@ import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createJiti } from "jiti";
 import { z } from "zod";
-import { isWorkflowPlugin, type WorkflowPlugin } from "./api.ts";
+import { isWorkflowPlugin, type PalantirWorkflowPlugin } from "./api.ts";
 import { isNodeError } from "./internal/errors.ts";
-import { MemoryWorkflowState } from "./internal/state-store.ts";
-import { WorkflowRegistry, type RegisteredWorkflow } from "./internal/workflow-registry.ts";
+import { PalantirMemoryWorkflowState } from "./internal/state-store.ts";
+import { PalantirWorkflowRegistry, type PalantirRegisteredWorkflow } from "./internal/workflow-registry.ts";
 
 const PALANTIR_CONFIG_FILE_NAME = "palantir.json";
 const palantirConfigSchema = z.object({
@@ -30,18 +30,18 @@ export type PalantirProject = {
 	readonly configFiles: readonly PalantirConfigFile[];
 };
 
-export type LoadedPalantirProject = PalantirProject & {
-	readonly plugins: readonly WorkflowPlugin[];
-	readonly registry: WorkflowRegistry;
-	readonly workflows: readonly RegisteredWorkflow[];
-	readonly state: MemoryWorkflowState;
+export type PalantirLoadedProject = PalantirProject & {
+	readonly plugins: readonly PalantirWorkflowPlugin[];
+	readonly registry: PalantirWorkflowRegistry;
+	readonly workflows: readonly PalantirRegisteredWorkflow[];
+	readonly state: PalantirMemoryWorkflowState;
 };
 
-export async function loadPalantirProject(cwd: string): Promise<LoadedPalantirProject> {
+export async function loadPalantirProject(cwd: string): Promise<PalantirLoadedProject> {
 	const project = await findPalantirProject(cwd);
 	const plugins = await loadWorkflowPlugins(project);
-	const registry = new WorkflowRegistry();
-	const state = new MemoryWorkflowState();
+	const registry = new PalantirWorkflowRegistry();
+	const state = new PalantirMemoryWorkflowState();
 	for (const plugin of plugins) {
 		const implementation = typeof plugin.implementation === "function"
 			? plugin.implementation({ cwd: project.cwd, state })
@@ -100,8 +100,8 @@ async function readPalantirConfigFile(path: string): Promise<PalantirConfigFile>
 	return { path, root: dirname(path), config };
 }
 
-async function loadWorkflowPlugins(project: PalantirProject): Promise<WorkflowPlugin[]> {
-	const plugins: WorkflowPlugin[] = [];
+async function loadWorkflowPlugins(project: PalantirProject): Promise<PalantirWorkflowPlugin[]> {
+	const plugins: PalantirWorkflowPlugin[] = [];
 	for (const configFile of project.configFiles) {
 		const jiti = createJiti(pathToFileURL(configFile.path).href, { moduleCache: false });
 		for (const pluginPath of configFile.config.plugins) {

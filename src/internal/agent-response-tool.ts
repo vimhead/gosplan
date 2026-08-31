@@ -1,12 +1,12 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { z } from "zod";
-import type { WorkflowDispose } from "../api.ts";
+import type { PalantirDispose } from "../api.ts";
 import { zodErrorMessage } from "./errors.ts";
 
 export const AGENT_RESPONSE_TOOL_NAME = "pi_workflows_agent_response";
 
-export type CapturedAgentResponse = {
+export type PalantirCapturedAgentResponse = {
 	readonly called: boolean;
 	readonly response?: unknown;
 };
@@ -26,10 +26,10 @@ type AgentResponseToolDetails = {
 	readonly response?: unknown;
 };
 
-export class AgentResponseCollector {
+export class PalantirAgentResponseCollector {
 	private readonly pending = new Map<string, PendingAgentResponse>();
 
-	begin(runId: string, label: string, responseSchema: z.ZodType): WorkflowDispose {
+	begin(runId: string, label: string, responseSchema: z.ZodType): PalantirDispose {
 		this.pending.set(runId, { label, responseSchema, called: false });
 		return () => this.pending.delete(runId);
 	}
@@ -48,14 +48,14 @@ export class AgentResponseCollector {
 		return { label: pending.label, response: parsed.data };
 	}
 
-	get(runId: string): CapturedAgentResponse {
+	get(runId: string): PalantirCapturedAgentResponse {
 		const pending = this.pending.get(runId);
 		return pending ? { called: pending.called, response: pending.response } : { called: false };
 	}
 }
 
-export class AgentResponseToolFactory {
-	constructor(private readonly responseCollector: AgentResponseCollector) {}
+export class PalantirAgentResponseToolFactory {
+	constructor(private readonly responseCollector: PalantirAgentResponseCollector) {}
 
 	create(): ToolDefinition {
 		const responseCollector = this.responseCollector;

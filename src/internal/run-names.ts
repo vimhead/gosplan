@@ -19,7 +19,7 @@ const NOUNS = [
 	"zephyr", "orchid", "bridge", "castle", "harvest", "mirror", "needle", "quartz", "ripple", "signal",
 ];
 
-export function generateWorkflowRunName(existingNames: ReadonlySet<string>): string {
+export function generateRunName(existingNames: ReadonlySet<string>): string {
 	for (let attempt = 0; attempt < 100; attempt++) {
 		const name = `${pick(ADJECTIVES)}-${pick(MODIFIERS)}-${pick(NOUNS)}`;
 		if (!existingNames.has(name)) return name;

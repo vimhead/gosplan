@@ -2,16 +2,16 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import type {
-	DeletedWorkflowRunInfo,
-	RegisteredWorkflowInfo,
-	WorkflowInterruptedLaunchResult,
-	WorkflowRunCheckpoint,
-	WorkflowRunInfo,
-	RunMetrics,
-	WorkflowStateReader,
+	DeletedPalantirRunInfo,
+	PalantirRegisteredWorkflowInfo,
+	PalantirInterruptedRunResult,
+	PalantirRunCheckpoint,
+	PalantirRunInfo,
+	PalantirRunMetrics,
+	PalantirWorkflowStateReader,
 } from "./api.ts";
 import { loadPalantirProject } from "./plugin-loader.ts";
-import type { RegisteredWorkflow } from "./internal/workflow-registry.ts";
+import type { PalantirRegisteredWorkflow } from "./internal/workflow-registry.ts";
 
 export type PalantirClientInput = {
 	readonly spawnCwd?: string;
@@ -20,22 +20,22 @@ export type PalantirClientInput = {
 
 export type PalantirClient = {
 	readonly workflows: {
-		list(): Promise<RegisteredWorkflowInfo[]>;
-		entries(): Promise<readonly RegisteredWorkflow[]>;
+		list(): Promise<PalantirRegisteredWorkflowInfo[]>;
+		entries(): Promise<readonly PalantirRegisteredWorkflow[]>;
 	};
-	readonly state: WorkflowStateReader;
+	readonly state: PalantirWorkflowStateReader;
 	readonly runs: {
-		start(input: { readonly workflowId: string; readonly params: unknown; readonly configOverride?: unknown }): Promise<WorkflowRunInfo>;
-		resume(input: { readonly run: string; readonly params?: unknown }): Promise<WorkflowRunInfo>;
-		list(): Promise<WorkflowRunInfo[]>;
-		inspect(run: string): Promise<WorkflowRunInfo>;
-		checkpoints(run: string): Promise<WorkflowRunCheckpoint[]>;
-		metrics(run: string): Promise<RunMetrics>;
-		gate(run: string): Promise<WorkflowInterruptedLaunchResult>;
-		rollback(run: string, checkpointId: string): Promise<WorkflowRunInfo>;
-		stop(run: string): Promise<WorkflowRunInfo>;
-		kill(run: string): Promise<WorkflowRunInfo>;
-		delete(run: string): Promise<DeletedWorkflowRunInfo>;
+		start(input: { readonly workflowId: string; readonly params: unknown; readonly configOverride?: unknown }): Promise<PalantirRunInfo>;
+		resume(input: { readonly run: string; readonly params?: unknown }): Promise<PalantirRunInfo>;
+		list(): Promise<PalantirRunInfo[]>;
+		inspect(run: string): Promise<PalantirRunInfo>;
+		checkpoints(run: string): Promise<PalantirRunCheckpoint[]>;
+		metrics(run: string): Promise<PalantirRunMetrics>;
+		gate(run: string): Promise<PalantirInterruptedRunResult>;
+		rollback(run: string, checkpointId: string): Promise<PalantirRunInfo>;
+		stop(run: string): Promise<PalantirRunInfo>;
+		kill(run: string): Promise<PalantirRunInfo>;
+		delete(run: string): Promise<DeletedPalantirRunInfo>;
 		logs(run: string, options?: { readonly follow?: boolean }): AsyncIterable<Record<string, unknown>>;
 	};
 };
@@ -45,22 +45,22 @@ export function createPalantirClient(input: PalantirClientInput = {}): PalantirC
 	const catalog = new PalantirWorkflowCatalog(input.spawnCwd ?? process.cwd());
 	const client: PalantirClient = {
 		workflows: {
-			list: async () => (await processRunner.readJson<{ workflows: RegisteredWorkflowInfo[] }>(["workflows", "list"])).workflows,
+			list: async () => (await processRunner.readJson<{ workflows: PalantirRegisteredWorkflowInfo[] }>(["workflows", "list"])).workflows,
 			entries: async () => (await catalog.load()).workflows,
 		},
 		state: catalog.state,
 		runs: {
-			start: async (startInput) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "start", startInput.workflowId, "--params", JSON.stringify(startInput.params), ...configArgs(startInput.configOverride)])).run,
-			resume: async (resumeInput) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "resume", resumeInput.run, ...paramsArgs(resumeInput.params)])).run,
-			list: async () => (await processRunner.readJson<{ runs: WorkflowRunInfo[] }>(["runs", "list"])).runs,
-			inspect: async (run) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "inspect", run])).run,
-			checkpoints: async (run) => (await processRunner.readJson<{ checkpoints: WorkflowRunCheckpoint[] }>(["runs", "checkpoints", run])).checkpoints,
-			metrics: async (run) => (await processRunner.readJson<{ metrics: RunMetrics }>(["runs", "metrics", run])).metrics,
-			gate: async (run) => (await processRunner.readJson<{ launch: WorkflowInterruptedLaunchResult }>(["runs", "gate", run])).launch,
-			rollback: async (run, checkpointId) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "rollback", run, checkpointId])).run,
-			stop: async (run) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "stop", run])).run,
-			kill: async (run) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "kill", run])).run,
-			delete: async (run) => (await processRunner.readJson<{ deleted: DeletedWorkflowRunInfo }>(["runs", "delete", run])).deleted,
+			start: async (startInput) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "start", startInput.workflowId, "--params", JSON.stringify(startInput.params), ...configArgs(startInput.configOverride)])).run,
+			resume: async (resumeInput) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "resume", resumeInput.run, ...paramsArgs(resumeInput.params)])).run,
+			list: async () => (await processRunner.readJson<{ runs: PalantirRunInfo[] }>(["runs", "list"])).runs,
+			inspect: async (run) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "inspect", run])).run,
+			checkpoints: async (run) => (await processRunner.readJson<{ checkpoints: PalantirRunCheckpoint[] }>(["runs", "checkpoints", run])).checkpoints,
+			metrics: async (run) => (await processRunner.readJson<{ metrics: PalantirRunMetrics }>(["runs", "metrics", run])).metrics,
+			gate: async (run) => (await processRunner.readJson<{ launch: PalantirInterruptedRunResult }>(["runs", "gate", run])).launch,
+			rollback: async (run, checkpointId) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "rollback", run, checkpointId])).run,
+			stop: async (run) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "stop", run])).run,
+			kill: async (run) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "kill", run])).run,
+			delete: async (run) => (await processRunner.readJson<{ deleted: DeletedPalantirRunInfo }>(["runs", "delete", run])).deleted,
 			logs: (run, options) => processRunner.readJsonLines(["runs", "logs", run, ...(options?.follow ? ["--follow"] : [])]),
 		},
 	};
@@ -69,7 +69,7 @@ export function createPalantirClient(input: PalantirClientInput = {}): PalantirC
 
 class PalantirWorkflowCatalog {
 	private loaded: ReturnType<typeof loadPalantirProject> | undefined;
-	readonly state: WorkflowStateReader = {
+	readonly state: PalantirWorkflowStateReader = {
 		get: async (state) => (await this.load()).state.get(state),
 		getOptional: async (state) => (await this.load()).state.getOptional(state),
 	};

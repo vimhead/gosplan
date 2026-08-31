@@ -11,23 +11,23 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import type { AgentPromptInput, AgentRunInput, AgentRunRawAttempt, AgentRunResult, AgentSessionEvents, AgentSpawnInput, WorkflowAgentSession, AgentUsage } from "../api.ts";
+import type { PalantirAgentPromptInput, PalantirAgentRunInput, PalantirAgentRunRawAttempt, PalantirAgentRunResult, PalantirAgentSessionEvents, PalantirAgentSpawnInput, PalantirAgentSession, PalantirAgentUsage } from "../api.ts";
 import {
 	AGENT_RESPONSE_TOOL_NAME,
-	AgentResponseCollector,
-	AgentResponseToolFactory,
-	type CapturedAgentResponse,
+	PalantirAgentResponseCollector,
+	PalantirAgentResponseToolFactory,
+	type PalantirCapturedAgentResponse,
 } from "./agent-response-tool.ts";
 import { errorMessage } from "./errors.ts";
-import type { WorkflowRunLogs } from "./logs.ts";
+import type { PalantirRunLogs } from "./logs.ts";
 import { safeFileName } from "./file-names.ts";
-import type { WorkflowRunLogger } from "./run-log.ts";
+import type { PalantirRunLogger } from "./run-log.ts";
 import { agentUsageFromValue, emptyAgentUsage, totalAgentUsage } from "./usage.ts";
 
 const DEFAULT_AGENT_ATTEMPTS = 3;
 const DEFAULT_AGENT_TOOL_ALLOWLIST = ["read", "bash", "edit", "write", AGENT_RESPONSE_TOOL_NAME] as const;
 
-type WorkflowAgentRunnerInput = {
+type PalantirAgentRunnerInput = {
 	readonly id: string;
 	readonly runRoot: string;
 	readonly workspace: string;
@@ -36,26 +36,26 @@ type WorkflowAgentRunnerInput = {
 	readonly model?: CreateAgentSessionOptions["model"];
 	readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
 	readonly agentDir?: string;
-	readonly logs: WorkflowRunLogs;
-	readonly logger: WorkflowRunLogger;
-	readonly responseCollector: AgentResponseCollector;
+	readonly logs: PalantirRunLogs;
+	readonly logger: PalantirRunLogger;
+	readonly responseCollector: PalantirAgentResponseCollector;
 };
 
-type SpawnedWorkflowAgentSessionInput = WorkflowAgentRunnerInput & {
+type SpawnedPalantirAgentSessionInput = PalantirAgentRunnerInput & {
 	readonly label: string;
 	readonly cwd: string;
 	readonly session: AgentSession;
-	readonly events: AgentSessionEvents;
+	readonly events: PalantirAgentSessionEvents;
 };
 
-export class WorkflowAgentRunner {
-	private readonly responseToolFactory: AgentResponseToolFactory;
+export class PalantirAgentRunner {
+	private readonly responseToolFactory: PalantirAgentResponseToolFactory;
 
-	constructor(private readonly input: WorkflowAgentRunnerInput) {
-		this.responseToolFactory = new AgentResponseToolFactory(input.responseCollector);
+	constructor(private readonly input: PalantirAgentRunnerInput) {
+		this.responseToolFactory = new PalantirAgentResponseToolFactory(input.responseCollector);
 	}
 
-	async spawn(agentInput: AgentSpawnInput): Promise<WorkflowAgentSession> {
+	async spawn(agentInput: PalantirAgentSpawnInput): Promise<PalantirAgentSession> {
 		const cwd = agentInput.cwd ? this.resolveFromCwd(agentInput.cwd) : this.input.cwd;
 		const sessionDir = resolve(this.input.runRoot, "sessions");
 		await mkdir(sessionDir, { recursive: true });
@@ -75,7 +75,7 @@ export class WorkflowAgentRunner {
 		});
 
 		await this.input.logger.record({ type: "agent.spawned", label: agentInput.label, cwd });
-		return new SpawnedWorkflowAgentSession({
+		return new SpawnedPalantirAgentSession({
 			...this.input,
 			label: agentInput.label,
 			cwd,
@@ -84,7 +84,7 @@ export class WorkflowAgentRunner {
 		});
 	}
 
-	async run<ResponseSchema extends z.ZodType>(agentInput: AgentRunInput<ResponseSchema>): Promise<AgentRunResult<ResponseSchema>> {
+	async run<ResponseSchema extends z.ZodType>(agentInput: PalantirAgentRunInput<ResponseSchema>): Promise<PalantirAgentRunResult<ResponseSchema>> {
 		const agent = await this.spawn(agentInput);
 		try {
 			return await agent.run(agentInput);
@@ -103,22 +103,22 @@ export class WorkflowAgentRunner {
 	}
 }
 
-class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
+class SpawnedPalantirAgentSession implements PalantirAgentSession {
 	readonly label: string;
 	readonly cwd: string;
-	readonly events: AgentSessionEvents;
+	readonly events: PalantirAgentSessionEvents;
 	private isDisposed = false;
 
-	constructor(private readonly input: SpawnedWorkflowAgentSessionInput) {
+	constructor(private readonly input: SpawnedPalantirAgentSessionInput) {
 		this.label = input.label;
 		this.cwd = input.cwd;
 		this.events = input.events;
 	}
 
-	async run<ResponseSchema extends z.ZodType>(agentInput: AgentPromptInput<ResponseSchema>): Promise<AgentRunResult<ResponseSchema>> {
+	async run<ResponseSchema extends z.ZodType>(agentInput: PalantirAgentPromptInput<ResponseSchema>): Promise<PalantirAgentRunResult<ResponseSchema>> {
 		if (this.isDisposed) throw new Error(`Workflow agent session is disposed: ${this.label}`);
 		const maxAttempts = Math.max(1, Math.floor(agentInput.maxAttempts ?? DEFAULT_AGENT_ATTEMPTS));
-		const attempts: AgentRunRawAttempt[] = [];
+		const attempts: PalantirAgentRunRawAttempt[] = [];
 		const startedAtMs = Date.now();
 		let isTerminalEventRecorded = false;
 		await this.input.logger.record({ type: "agent.started", label: this.label, cwd: this.cwd, maxAttempts });
@@ -127,14 +127,14 @@ class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
 			for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 				await this.input.logger.record({ type: "agent.attempt.started", label: this.label, attempt });
 				const raw = await this.runAttempt(agentInput, attempt, attempts.at(-1)?.error);
-				const rawAttempt: AgentRunRawAttempt = { attempt, ...raw };
+				const rawAttempt: PalantirAgentRunRawAttempt = { attempt, ...raw };
 				attempts.push(rawAttempt);
 
 				try {
 					if (!raw.responseToolCalled) throw new Error(`Agent did not call ${AGENT_RESPONSE_TOOL_NAME}`);
 					const response = agentInput.response.parse(raw.toolResponse);
 					const usage = totalAgentUsage(attempts.map((candidate) => candidate.usage));
-					const result: AgentRunResult<ResponseSchema> = {
+					const result: PalantirAgentRunResult<ResponseSchema> = {
 						label: this.label,
 						cwd: this.cwd,
 						response,
@@ -188,10 +188,10 @@ class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
 	}
 
 	private async runAttempt<ResponseSchema extends z.ZodType>(
-		agentInput: AgentPromptInput<ResponseSchema>,
+		agentInput: PalantirAgentPromptInput<ResponseSchema>,
 		attempt: number,
 		previousError: string | undefined,
-	): Promise<Omit<AgentRunRawAttempt, "attempt" | "error">> {
+	): Promise<Omit<PalantirAgentRunRawAttempt, "attempt" | "error">> {
 		const responseRunId = `${this.input.id}:${attempt}:${randomUUID()}`;
 		const messages: unknown[] = [];
 		let text = "";
@@ -207,7 +207,7 @@ class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
 		};
 		this.input.signal?.addEventListener("abort", abortNestedSession, { once: true });
 
-		let capturedResponse: CapturedAgentResponse = { called: false };
+		let capturedResponse: PalantirCapturedAgentResponse = { called: false };
 		try {
 			this.input.signal?.throwIfAborted();
 			await this.input.session.prompt(withResponseToolInstruction(agentInput.prompt, agentInput.response, this.label, responseRunId, attempt, previousError), {
@@ -232,11 +232,11 @@ class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
 	}
 }
 
-function usageFromMessages(messages: readonly unknown[]): AgentUsage {
-	return totalAgentUsage(messages.map(usageFromMessage).filter((usage): usage is AgentUsage => usage !== undefined));
+function usageFromMessages(messages: readonly unknown[]): PalantirAgentUsage {
+	return totalAgentUsage(messages.map(usageFromMessage).filter((usage): usage is PalantirAgentUsage => usage !== undefined));
 }
 
-function usageFromMessage(message: unknown): AgentUsage | undefined {
+function usageFromMessage(message: unknown): PalantirAgentUsage | undefined {
 	if (!message || typeof message !== "object" || !("usage" in message)) return undefined;
 	return agentUsageFromValue((message as { usage?: unknown }).usage) ?? emptyAgentUsage();
 }

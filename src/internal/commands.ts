@@ -1,25 +1,25 @@
 import { spawn } from "node:child_process";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { WriteStream } from "node:fs";
-import type { CommandRunInput, CommandRunResult, WorkflowLogRef } from "../api.ts";
+import type { PalantirCommandRunInput, PalantirCommandRunResult, PalantirLogRef } from "../api.ts";
 import { errorMessage } from "./errors.ts";
 import { safeFileName } from "./file-names.ts";
-import type { WorkflowRunLogs } from "./logs.ts";
-import type { WorkflowRunLogger } from "./run-log.ts";
+import type { PalantirRunLogs } from "./logs.ts";
+import type { PalantirRunLogger } from "./run-log.ts";
 
-type WorkflowCommandRunnerInput = {
+type PalantirCommandRunnerInput = {
 	readonly workspace: string;
 	readonly cwd: string;
 	readonly env: Record<string, string>;
 	readonly signal?: AbortSignal;
-	readonly logs: WorkflowRunLogs;
-	readonly logger: WorkflowRunLogger;
+	readonly logs: PalantirRunLogs;
+	readonly logger: PalantirRunLogger;
 };
 
-export class WorkflowCommandRunner {
-	constructor(private readonly input: WorkflowCommandRunnerInput) {}
+export class PalantirCommandRunner {
+	constructor(private readonly input: PalantirCommandRunnerInput) {}
 
-	async run(commandInput: CommandRunInput): Promise<CommandRunResult> {
+	async run(commandInput: PalantirCommandRunInput): Promise<PalantirCommandRunResult> {
 		const cwd = this.resolveFromCwd(commandInput.cwd ?? this.input.cwd);
 		const startedAtMs = Date.now();
 		await this.input.logger.record({ type: "command.started", label: commandInput.label, command: commandInput.command, cwd });
@@ -144,7 +144,7 @@ async function spawnCommand(input: SpawnCommandInput): Promise<SpawnCommandResul
 	});
 }
 
-function commandLog(label: string, stream: "stdout" | "stderr"): WorkflowLogRef {
+function commandLog(label: string, stream: "stdout" | "stderr"): PalantirLogRef {
 	return { id: `commands/${safeFileName(label)}.${stream}` };
 }
 

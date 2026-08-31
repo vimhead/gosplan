@@ -1,8 +1,8 @@
-import type { AnyWorkflowDeclaration, WorkflowUiField } from "./api.ts";
+import type { PalantirAnyWorkflowDeclaration, PalantirWorkflowUiField } from "./api.ts";
 
-export function assertLaunchableWorkflow(_workflow: AnyWorkflowDeclaration): void {}
+export function assertLaunchableWorkflow(_workflow: PalantirAnyWorkflowDeclaration): void {}
 
-export function inferInputKind(schema: unknown, uiField: WorkflowUiField | undefined): WorkflowUiField["input"] | undefined {
+export function inferInputKind(schema: unknown, uiField: PalantirWorkflowUiField | undefined): PalantirWorkflowUiField["input"] | undefined {
 	if (uiField?.input !== undefined) return uiField.input;
 	const unwrappedSchema = unwrapSchema(schema);
 	const type = schemaType(unwrappedSchema);

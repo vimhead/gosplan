@@ -1,14 +1,14 @@
 import { createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import type { WorkflowLogRef } from "../api.ts";
+import type { PalantirLogRef } from "../api.ts";
 
-export type WorkflowLogWriteStream = {
-	readonly log: WorkflowLogRef;
+export type PalantirLogWriteStream = {
+	readonly log: PalantirLogRef;
 	readonly stream: WriteStream;
 };
 
-export class WorkflowRunLogs {
+export class PalantirRunLogs {
 	constructor(private readonly logsRoot: string) {}
 
 	async write(path: string, content: string): Promise<void> {
@@ -17,11 +17,11 @@ export class WorkflowRunLogs {
 		await writeFile(absolutePath, content, "utf8");
 	}
 
-	async read(log: WorkflowLogRef): Promise<string> {
+	async read(log: PalantirLogRef): Promise<string> {
 		return readFile(this.resolveLogPath(`${log.id}.log`), "utf8");
 	}
 
-	async createWriteStream(log: WorkflowLogRef): Promise<WorkflowLogWriteStream> {
+	async createWriteStream(log: PalantirLogRef): Promise<PalantirLogWriteStream> {
 		const absolutePath = this.resolveLogPath(`${log.id}.log`);
 		await mkdir(dirname(absolutePath), { recursive: true });
 		return {

@@ -1,13 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { writeJsonAtomically } from "./json-file.ts";
 
-export type WorkflowRunManifestEvent = {
+export type PalantirRunManifestEvent = {
 	readonly at: string;
 	readonly type: string;
 	readonly [key: string]: unknown;
 };
 
-export type WorkflowRunManifest = {
+export type PalantirRunManifest = {
 	readonly id: string;
 	readonly name: string;
 	readonly workflowId: string;
@@ -15,25 +15,25 @@ export type WorkflowRunManifest = {
 	readonly workspace: string;
 	readonly initialCwd: string;
 	readonly startedAt: string;
-	readonly events: readonly WorkflowRunManifestEvent[];
+	readonly events: readonly PalantirRunManifestEvent[];
 };
 
-export class WorkflowRunLogger {
-	private readonly events: WorkflowRunManifestEvent[] = [];
+export class PalantirRunLogger {
+	private readonly events: PalantirRunManifestEvent[] = [];
 	private writeChain: Promise<void> = Promise.resolve();
 
 	constructor(
 		private readonly manifestPath: string,
-		private readonly manifest: Omit<WorkflowRunManifest, "events">,
-		initialEvents: readonly WorkflowRunManifestEvent[] = [],
+		private readonly manifest: Omit<PalantirRunManifest, "events">,
+		initialEvents: readonly PalantirRunManifestEvent[] = [],
 	) {
 		this.events.push(...initialEvents);
 	}
 
-	static async load(manifestPath: string): Promise<WorkflowRunLogger> {
-		const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as WorkflowRunManifest;
+	static async load(manifestPath: string): Promise<PalantirRunLogger> {
+		const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as PalantirRunManifest;
 		const { events, ...manifestHeader } = manifest;
-		return new WorkflowRunLogger(manifestPath, manifestHeader, events);
+		return new PalantirRunLogger(manifestPath, manifestHeader, events);
 	}
 
 	boundary(): number {

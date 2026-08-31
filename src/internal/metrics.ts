@@ -1,21 +1,24 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentMetrics, AgentUsage, CommandMetrics, RunMetrics, RunStatus, WorkflowMetrics } from "../api.ts";
-import { workflowRunCurrentRoot } from "./run-store.ts";
-import { RUNTIME_STATE_FILE_NAME } from "./runtime-state.ts";
+import type { PalantirAgentMetrics, PalantirAgentUsage, PalantirCommandMetrics, PalantirRunMetrics, PalantirRunStatus, PalantirWorkflowMetrics } from "../api.ts";
+import { runCurrentRoot } from "./run-store.ts";
+import { RUN_STATE_FILE_NAME } from "./run-state.ts";
+import { isNodeError } from "./errors.ts";
 import { addAgentUsage, agentUsageFromValue, emptyAgentUsage } from "./usage.ts";
 
-type WorkflowRunManifestEvent = Record<string, unknown> & {
+const LEGACY_RUN_STATE_FILE_NAME = "runtime-state.json";
+
+type PalantirRunManifestEvent = Record<string, unknown> & {
 	readonly at?: string;
 	readonly type?: string;
 };
 
-type WorkflowRunManifest = {
-	readonly events?: readonly WorkflowRunManifestEvent[];
+type PalantirRunManifest = {
+	readonly events?: readonly PalantirRunManifestEvent[];
 };
 
-type WorkflowRuntimeStateSnapshot = {
-	readonly status?: RunStatus;
+type PalantirRunStateSnapshot = {
+	readonly status?: PalantirRunStatus;
 	readonly startedAt?: string;
 	readonly updatedAt?: string;
 	readonly outcome?: { readonly completedAt?: string } | null;
@@ -26,8 +29,8 @@ type OpenWorkflowMetrics = {
 	readonly workflowId: string;
 	readonly startedAt: string;
 	readonly startedAtMs: number;
-	readonly agents: readonly AgentMetrics[];
-	readonly commands: readonly CommandMetrics[];
+	readonly agents: readonly PalantirAgentMetrics[];
+	readonly commands: readonly PalantirCommandMetrics[];
 	readonly openAgents: readonly OpenAgentMetrics[];
 	readonly openCommands: readonly OpenCommandMetrics[];
 };
@@ -44,25 +47,25 @@ type OpenCommandMetrics = {
 	readonly startedAtMs: number;
 };
 
-export async function readRunMetrics(runRoot: string): Promise<RunMetrics> {
-	const currentRoot = workflowRunCurrentRoot(runRoot);
+export async function readRunMetrics(runRoot: string): Promise<PalantirRunMetrics> {
+	const currentRoot = runCurrentRoot(runRoot);
 	const [state, events] = await Promise.all([
-		readRuntimeStateSnapshot(join(currentRoot, RUNTIME_STATE_FILE_NAME)),
+		readRunStateSnapshot(currentRoot),
 		readManifestEvents(join(currentRoot, "manifest.json")),
 	]);
 	return calculateRunMetrics(events, state, new Date());
 }
 
 export function calculateRunMetrics(
-	events: readonly WorkflowRunManifestEvent[],
-	state: WorkflowRuntimeStateSnapshot,
+	events: readonly PalantirRunManifestEvent[],
+	state: PalantirRunStateSnapshot,
 	now: Date,
-): RunMetrics {
+): PalantirRunMetrics {
 	const startedAt = state.startedAt ?? firstEventTime(events) ?? now.toISOString();
 	const endedAt = runEndedAt(state);
 	const startedAtMs = timestampMs(startedAt) ?? now.getTime();
 	const endedAtMs = timestampMs(endedAt) ?? now.getTime();
-	const workflows: WorkflowMetrics[] = [];
+	const workflows: PalantirWorkflowMetrics[] = [];
 	let openWorkflow: OpenWorkflowMetrics | undefined;
 	let gateStartedAtMs: number | undefined;
 	let gateWaitMs = 0;
@@ -146,12 +149,17 @@ export function calculateRunMetrics(
 	};
 }
 
-async function readRuntimeStateSnapshot(path: string): Promise<WorkflowRuntimeStateSnapshot> {
-	return JSON.parse(await readFile(path, "utf8")) as WorkflowRuntimeStateSnapshot;
+async function readRunStateSnapshot(currentRoot: string): Promise<PalantirRunStateSnapshot> {
+	try {
+		return JSON.parse(await readFile(join(currentRoot, RUN_STATE_FILE_NAME), "utf8")) as PalantirRunStateSnapshot;
+	} catch (error) {
+		if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+		return JSON.parse(await readFile(join(currentRoot, LEGACY_RUN_STATE_FILE_NAME), "utf8")) as PalantirRunStateSnapshot;
+	}
 }
 
-async function readManifestEvents(path: string): Promise<readonly WorkflowRunManifestEvent[]> {
-	const manifest = JSON.parse(await readFile(path, "utf8")) as WorkflowRunManifest;
+async function readManifestEvents(path: string): Promise<readonly PalantirRunManifestEvent[]> {
+	const manifest = JSON.parse(await readFile(path, "utf8")) as PalantirRunManifest;
 	return manifest.events ?? [];
 }
 
@@ -168,7 +176,7 @@ function createSyntheticWorkflowMetrics(workflowId: string, runStartedAtMs: numb
 	};
 }
 
-function startAgentMetrics(workflow: OpenWorkflowMetrics, event: WorkflowRunManifestEvent, now: Date): OpenWorkflowMetrics {
+function startAgentMetrics(workflow: OpenWorkflowMetrics, event: PalantirRunManifestEvent, now: Date): OpenWorkflowMetrics {
 	return {
 		...workflow,
 		openAgents: [...workflow.openAgents, {
@@ -179,13 +187,13 @@ function startAgentMetrics(workflow: OpenWorkflowMetrics, event: WorkflowRunMani
 	};
 }
 
-function finishAgentMetrics(workflow: OpenWorkflowMetrics, event: WorkflowRunManifestEvent, usage: AgentUsage, now: Date): OpenWorkflowMetrics {
+function finishAgentMetrics(workflow: OpenWorkflowMetrics, event: PalantirRunManifestEvent, usage: PalantirAgentUsage, now: Date): OpenWorkflowMetrics {
 	const [agent, openAgents] = takeOpenChild(workflow.openAgents, stringField(event.label, "unknown"));
 	const closedAgent = closeAgentMetrics(event, workflow.agents.length + 1, usage, now, agent);
 	return { ...workflow, agents: [...workflow.agents, closedAgent], openAgents };
 }
 
-function startCommandMetrics(workflow: OpenWorkflowMetrics, event: WorkflowRunManifestEvent, now: Date): OpenWorkflowMetrics {
+function startCommandMetrics(workflow: OpenWorkflowMetrics, event: PalantirRunManifestEvent, now: Date): OpenWorkflowMetrics {
 	return {
 		...workflow,
 		openCommands: [...workflow.openCommands, {
@@ -196,18 +204,18 @@ function startCommandMetrics(workflow: OpenWorkflowMetrics, event: WorkflowRunMa
 	};
 }
 
-function finishCommandMetrics(workflow: OpenWorkflowMetrics, event: WorkflowRunManifestEvent, now: Date): OpenWorkflowMetrics {
+function finishCommandMetrics(workflow: OpenWorkflowMetrics, event: PalantirRunManifestEvent, now: Date): OpenWorkflowMetrics {
 	const [command, openCommands] = takeOpenChild(workflow.openCommands, stringField(event.label, "unknown"));
 	const closedCommand = closeCommandMetrics(event, workflow.commands.length + 1, now, command);
 	return { ...workflow, commands: [...workflow.commands, closedCommand], openCommands };
 }
 
-function closeOpenChildMetrics(workflow: OpenWorkflowMetrics, endedAtMs: number, endedAt: string | undefined, status: AgentMetrics["status"]): OpenWorkflowMetrics {
+function closeOpenChildMetrics(workflow: OpenWorkflowMetrics, endedAtMs: number, endedAt: string | undefined, status: PalantirAgentMetrics["status"]): OpenWorkflowMetrics {
 	return {
 		...workflow,
 		agents: [
 			...workflow.agents,
-			...workflow.openAgents.map((agent, offset): AgentMetrics => ({
+			...workflow.openAgents.map((agent, offset): PalantirAgentMetrics => ({
 				index: workflow.agents.length + offset + 1,
 				label: agent.label,
 				status,
@@ -219,7 +227,7 @@ function closeOpenChildMetrics(workflow: OpenWorkflowMetrics, endedAtMs: number,
 		],
 		commands: [
 			...workflow.commands,
-			...workflow.openCommands.map((command, offset): CommandMetrics => ({
+			...workflow.openCommands.map((command, offset): PalantirCommandMetrics => ({
 				index: workflow.commands.length + offset + 1,
 				label: command.label,
 				status,
@@ -236,10 +244,10 @@ function closeOpenChildMetrics(workflow: OpenWorkflowMetrics, endedAtMs: number,
 function closeWorkflowMetrics(
 	workflow: OpenWorkflowMetrics,
 	index: number,
-	status: WorkflowMetrics["status"],
+	status: PalantirWorkflowMetrics["status"],
 	wallMs: number,
 	endedAt: string | undefined,
-): WorkflowMetrics {
+): PalantirWorkflowMetrics {
 	const agentsMs = workflow.agents.reduce((sum, agent) => sum + agent.wallMs, 0);
 	const commandsMs = workflow.commands.reduce((sum, command) => sum + command.wallMs, 0);
 	return {
@@ -258,7 +266,7 @@ function closeWorkflowMetrics(
 	};
 }
 
-function closeAgentMetrics(event: WorkflowRunManifestEvent, index: number, usage: AgentUsage, now: Date, openAgent: OpenAgentMetrics | undefined): AgentMetrics {
+function closeAgentMetrics(event: PalantirRunManifestEvent, index: number, usage: PalantirAgentUsage, now: Date, openAgent: OpenAgentMetrics | undefined): PalantirAgentMetrics {
 	const endedAtMs = timestampMs(event.at) ?? now.getTime();
 	const wallMs = numberField(event.durationMs) || (openAgent ? Math.max(0, endedAtMs - openAgent.startedAtMs) : 0);
 	return {
@@ -273,7 +281,7 @@ function closeAgentMetrics(event: WorkflowRunManifestEvent, index: number, usage
 	};
 }
 
-function closeCommandMetrics(event: WorkflowRunManifestEvent, index: number, now: Date, openCommand: OpenCommandMetrics | undefined): CommandMetrics {
+function closeCommandMetrics(event: PalantirRunManifestEvent, index: number, now: Date, openCommand: OpenCommandMetrics | undefined): PalantirCommandMetrics {
 	const endedAtMs = timestampMs(event.at) ?? now.getTime();
 	const wallMs = numberField(event.durationMs) || (openCommand ? Math.max(0, endedAtMs - openCommand.startedAtMs) : 0);
 	return {
@@ -293,24 +301,24 @@ function takeOpenChild<T extends { readonly label: string }>(children: readonly 
 	return [children[index], [...children.slice(0, index), ...children.slice(index + 1)]];
 }
 
-function workflowTerminalStatus(type: unknown): WorkflowMetrics["status"] | undefined {
+function workflowTerminalStatus(type: unknown): PalantirWorkflowMetrics["status"] | undefined {
 	if (type === "workflow.completed") return "completed";
 	if (type === "workflow.failed") return "failed";
 	if (type === "workflow.transitioned") return "transitioned";
 	return undefined;
 }
 
-function runEndedAt(state: WorkflowRuntimeStateSnapshot): string | undefined {
+function runEndedAt(state: PalantirRunStateSnapshot): string | undefined {
 	if (state.status === "completed") return state.outcome?.completedAt ?? state.updatedAt;
 	if (state.status === "failed") return state.failed?.failedAt ?? state.outcome?.completedAt ?? state.updatedAt;
 	return undefined;
 }
 
-function agentUsageFromEvent(event: WorkflowRunManifestEvent): AgentUsage {
+function agentUsageFromEvent(event: PalantirRunManifestEvent): PalantirAgentUsage {
 	return agentUsageFromValue(event.usage) ?? emptyAgentUsage();
 }
 
-function firstEventTime(events: readonly WorkflowRunManifestEvent[]): string | undefined {
+function firstEventTime(events: readonly PalantirRunManifestEvent[]): string | undefined {
 	return events.find((event) => timestampMs(event.at) !== undefined)?.at;
 }
 

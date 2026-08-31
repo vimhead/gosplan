@@ -4,15 +4,15 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadPalantirProject } from "./plugin-loader.ts";
-import { type AnyWorkflowDeclaration, type DeletedWorkflowRunInfo, type WorkflowRunInfo } from "./api.ts";
-import { PalantirRuntime } from "./internal/session-runtime.ts";
+import { type PalantirAnyWorkflowDeclaration, type DeletedPalantirRunInfo, type PalantirRunInfo } from "./api.ts";
+import { PalantirEngine } from "./internal/engine.ts";
 import { errorMessage, isNodeError } from "./internal/errors.ts";
-import { readWorkflowLaunchRequest, readWorkflowResumeRequest, writeWorkflowLaunchRequest, writeWorkflowResumeRequest } from "./internal/launch-request.ts";
-import { generateWorkflowRunName } from "./internal/run-names.ts";
-import { getWorkflowRunLeaseOwner } from "./internal/run-lease.ts";
-import { WorkflowRunStore } from "./internal/run-store.ts";
+import { readRunLaunchRequest, readRunResumeRequest, writeRunLaunchRequest, writeRunResumeRequest } from "./internal/launch-request.ts";
+import { generateRunName } from "./internal/run-names.ts";
+import { getRunLeaseOwner } from "./internal/run-lease.ts";
+import { PalantirRunStore } from "./internal/run-store.ts";
 import { readRunMetrics } from "./internal/metrics.ts";
-import { getWorkflowRunInfo, listWorkflowRuns, resolveWorkflowRunRoot } from "./internal/runtime-state.ts";
+import { getRunInfo, listRuns, resolveRunRoot } from "./internal/run-state.ts";
 
 const RUNS_ROOT = join(".palantir", "runs");
 
@@ -32,57 +32,57 @@ async function runCommand(args: readonly string[]): Promise<void> {
 		return;
 	}
 	if (command === "execute-run" && subcommand) {
-		await executeWorkflowRun(subcommand);
+		await executeRun(subcommand);
 		return;
 	}
 	if (command === "runs" && subcommand === "start" && rest[0]) {
-		await startWorkflowRun(rest[0], rest.slice(1));
+		await startRun(rest[0], rest.slice(1));
 		return;
 	}
 	if (command === "runs" && subcommand === "resume" && rest[0]) {
-		await resumeWorkflowRun(rest[0], rest.slice(1));
+		await resumeRun(rest[0], rest.slice(1));
 		return;
 	}
 	if (command === "runs" && subcommand === "rollback" && rest[0]) {
-		await rollbackWorkflowRun(rest[0], rest.slice(1));
+		await rollbackRun(rest[0], rest.slice(1));
 		return;
 	}
 	if (command === "runs" && subcommand === "stop" && rest[0]) {
-		await signalWorkflowRun(rest[0], "SIGTERM");
+		await signalRun(rest[0], "SIGTERM");
 		return;
 	}
 	if (command === "runs" && subcommand === "kill" && rest[0]) {
-		await signalWorkflowRun(rest[0], "SIGKILL");
+		await signalRun(rest[0], "SIGKILL");
 		return;
 	}
 	if (command === "runs" && subcommand === "delete" && rest[0]) {
-		writeJson({ deleted: await deleteWorkflowRun(rest[0]) });
+		writeJson({ deleted: await deleteRun(rest[0]) });
 		return;
 	}
 	if (command === "runs" && subcommand === "list") {
-		writeJson({ runs: await listWorkflowRuns(process.cwd()) });
+		writeJson({ runs: await listRuns(process.cwd()) });
 		return;
 	}
 	if (command === "runs" && subcommand === "inspect" && rest[0]) {
-		writeJson({ run: await inspectWorkflowRun(rest[0]) });
+		writeJson({ run: await inspectRun(rest[0]) });
 		return;
 	}
 	if (command === "runs" && subcommand === "checkpoints" && rest[0]) {
-		const runRoot = await resolveWorkflowRunRoot(process.cwd(), rest[0]);
-		writeJson({ checkpoints: await (await WorkflowRunStore.open(runRoot)).listCheckpoints() });
+		const runRoot = await resolveRunRoot(process.cwd(), rest[0]);
+		writeJson({ checkpoints: await (await PalantirRunStore.open(runRoot)).listCheckpoints() });
 		return;
 	}
 	if (command === "runs" && subcommand === "metrics" && rest[0]) {
-		const runRoot = await resolveWorkflowRunRoot(process.cwd(), rest[0]);
+		const runRoot = await resolveRunRoot(process.cwd(), rest[0]);
 		writeJson({ metrics: await readRunMetrics(runRoot) });
 		return;
 	}
 	if (command === "runs" && subcommand === "gate" && rest[0]) {
-		await inspectWorkflowRunGate(rest[0]);
+		await inspectRunGate(rest[0]);
 		return;
 	}
 	if (command === "runs" && subcommand === "logs" && rest[0]) {
-		await writeWorkflowRunLogs(rest[0], { follow: rest.includes("--follow") });
+		await writeRunLogs(rest[0], { follow: rest.includes("--follow") });
 		return;
 	}
 	throw new Error(`Unknown palantir command: ${args.join(" ")}`);
@@ -93,109 +93,109 @@ async function listWorkflows(): Promise<void> {
 	writeJson({ workflows: project.registry.list() });
 }
 
-async function startWorkflowRun(workflowId: string, args: readonly string[]): Promise<void> {
+async function startRun(workflowId: string, args: readonly string[]): Promise<void> {
 	const project = await loadPalantirProject(process.cwd());
 	const workflow = project.registry.workflowById(workflowId);
 	if (!workflow) throw new Error(`Unknown workflow: ${workflowId}`);
 	const params = workflow.params.parse(parseJsonOption(args, "--params") ?? {});
 	const configOverride = parseJsonOption(args, "--config");
 	const id = randomUUID();
-	const name = generateWorkflowRunName(new Set((await listWorkflowRuns(process.cwd())).map((run) => run.name)));
+	const name = generateRunName(new Set((await listRuns(process.cwd())).map((run) => run.name)));
 	const runRoot = resolve(process.cwd(), RUNS_ROOT, id);
 	await mkdir(runRoot, { recursive: true });
 	const createdAt = new Date().toISOString();
-	await writeWorkflowLaunchRequest(runRoot, { version: 1, type: "run", id, name, workflowId, params, configOverride, createdAt });
+	await writeRunLaunchRequest(runRoot, { version: 1, type: "run", id, name, workflowId, params, configOverride, createdAt });
 	startDetachedExecuteRun(id);
 	writeJson({ run: startedRunInfo({ id, name, workflow, runRoot, createdAt }) });
 }
 
-async function resumeWorkflowRun(run: string, args: readonly string[]): Promise<void> {
-	const runRoot = await resolveWorkflowRunRoot(process.cwd(), run);
-	const runInfo = await getWorkflowRunInfo(runRoot);
+async function resumeRun(run: string, args: readonly string[]): Promise<void> {
+	const runRoot = await resolveRunRoot(process.cwd(), run);
+	const runInfo = await getRunInfo(runRoot);
 	const params = parseJsonOption(args, "--params");
-	await writeWorkflowResumeRequest(runRoot, { version: 1, type: "resume", id: runInfo.id, params, createdAt: new Date().toISOString() });
+	await writeRunResumeRequest(runRoot, { version: 1, type: "resume", id: runInfo.id, params, createdAt: new Date().toISOString() });
 	startDetachedExecuteRun(runInfo.id);
 	writeJson({ run: { ...runInfo, status: "running", health: "healthy", updatedAt: new Date().toISOString() } });
 }
 
-async function executeWorkflowRun(runId: string): Promise<void> {
+async function executeRun(runId: string): Promise<void> {
 	const abortController = new AbortController();
 	process.once("SIGTERM", () => abortController.abort(new Error("Stopped by user")));
 	process.once("SIGINT", () => abortController.abort(new Error("Interrupted")));
 	const runRoot = resolve(process.cwd(), RUNS_ROOT, runId);
 	const project = await loadPalantirProject(process.cwd());
-	const runtime = new PalantirRuntime({ cwd: process.cwd(), signal: abortController.signal, gateMode: "pause" });
-	for (const plugin of project.plugins) runtime.registerPlugin(plugin);
-	const launchRequest = await readOptionalWorkflowLaunchRequest(runRoot);
+	const engine = new PalantirEngine({ cwd: process.cwd(), signal: abortController.signal, gateMode: "pause" });
+	for (const plugin of project.plugins) engine.registerPlugin(plugin);
+	const launchRequest = await readOptionalRunLaunchRequest(runRoot);
 	if (launchRequest) {
 		try {
 			const workflow = project.registry.workflowById(launchRequest.workflowId);
 			if (!workflow) throw new Error(`Unknown workflow: ${launchRequest.workflowId}`);
-			await runtime.runWorkflow(workflow, launchRequest.params, { id: launchRequest.id, name: launchRequest.name, configOverride: launchRequest.configOverride });
+			await engine.runWorkflow(workflow, launchRequest.params, { id: launchRequest.id, name: launchRequest.name, configOverride: launchRequest.configOverride });
 			return;
 		} finally {
 			await rm(join(runRoot, "launch-request.json"), { force: true });
 		}
 	}
-	const resumeRequest = await readWorkflowResumeRequest(runRoot);
+	const resumeRequest = await readRunResumeRequest(runRoot);
 	try {
-		await runtime.resumeWorkflow(runRoot, resumeRequest.params);
+		await engine.resumeWorkflow(runRoot, resumeRequest.params);
 	} finally {
 		await rm(join(runRoot, "resume-request.json"), { force: true });
 	}
 }
 
-async function rollbackWorkflowRun(run: string, args: readonly string[]): Promise<void> {
+async function rollbackRun(run: string, args: readonly string[]): Promise<void> {
 	const checkpointId = args[0];
 	if (!checkpointId) throw new Error("Missing checkpoint id");
-	const runRoot = await resolveWorkflowRunRoot(process.cwd(), run);
-	const runtime = new PalantirRuntime({ cwd: process.cwd(), gateMode: "pause" });
-	writeJson({ run: await runtime.rollbackRun(runRoot, checkpointId) });
+	const runRoot = await resolveRunRoot(process.cwd(), run);
+	const engine = new PalantirEngine({ cwd: process.cwd(), gateMode: "pause" });
+	writeJson({ run: await engine.rollbackRun(runRoot, checkpointId) });
 }
 
-async function inspectWorkflowRun(run: string): Promise<WorkflowRunInfo> {
-	const runRoot = await resolveWorkflowRunRoot(process.cwd(), run);
-	return getWorkflowRunInfo(runRoot);
+async function inspectRun(run: string): Promise<PalantirRunInfo> {
+	const runRoot = await resolveRunRoot(process.cwd(), run);
+	return getRunInfo(runRoot);
 }
 
-async function inspectWorkflowRunGate(run: string): Promise<void> {
-	const runRoot = await resolveWorkflowRunRoot(process.cwd(), run);
+async function inspectRunGate(run: string): Promise<void> {
+	const runRoot = await resolveRunRoot(process.cwd(), run);
 	const project = await loadPalantirProject(process.cwd());
-	const runtime = new PalantirRuntime({ cwd: process.cwd(), gateMode: "pause" });
-	for (const plugin of project.plugins) runtime.registerPlugin(plugin);
-	writeJson({ launch: await runtime.getActiveGate(runRoot) });
+	const engine = new PalantirEngine({ cwd: process.cwd(), gateMode: "pause" });
+	for (const plugin of project.plugins) engine.registerPlugin(plugin);
+	writeJson({ launch: await engine.getActiveGate(runRoot) });
 }
 
-async function signalWorkflowRun(run: string, signal: NodeJS.Signals): Promise<void> {
-	const runRoot = await resolveWorkflowRunRoot(process.cwd(), run);
-	await terminateWorkflowRun(runRoot, signal);
-	writeJson({ run: await getWorkflowRunInfo(runRoot) });
+async function signalRun(run: string, signal: NodeJS.Signals): Promise<void> {
+	const runRoot = await resolveRunRoot(process.cwd(), run);
+	await terminateRun(runRoot, signal);
+	writeJson({ run: await getRunInfo(runRoot) });
 }
 
-async function deleteWorkflowRun(run: string): Promise<DeletedWorkflowRunInfo> {
-	const runRoot = await resolveWorkflowRunRoot(process.cwd(), run);
-	const runInfo = await getWorkflowRunInfo(runRoot);
-	if (runInfo.status === "running") throw new Error(`Stop workflow run before deleting it: ${runInfo.name}`);
+async function deleteRun(run: string): Promise<DeletedPalantirRunInfo> {
+	const runRoot = await resolveRunRoot(process.cwd(), run);
+	const runInfo = await getRunInfo(runRoot);
+	if (runInfo.status === "running") throw new Error(`Stop run before deleting it: ${runInfo.name}`);
 	await rm(runRoot, { recursive: true, force: true });
 	return { id: runInfo.id, name: runInfo.name, path: runInfo.path };
 }
 
-async function terminateWorkflowRun(runRoot: string, signal: NodeJS.Signals): Promise<void> {
-	const owner = await getWorkflowRunLeaseOwner(runRoot);
+async function terminateRun(runRoot: string, signal: NodeJS.Signals): Promise<void> {
+	const owner = await getRunLeaseOwner(runRoot);
 	if (!owner) return;
 	sendSignal(owner.processGroupId, owner.pid, signal);
 	await delay(signal === "SIGKILL" ? 250 : 1000);
 }
 
-async function writeWorkflowRunLogs(run: string, options: { readonly follow: boolean }): Promise<void> {
-	const runRoot = await resolveWorkflowRunRoot(process.cwd(), run);
+async function writeRunLogs(run: string, options: { readonly follow: boolean }): Promise<void> {
+	const runRoot = await resolveRunRoot(process.cwd(), run);
 	let written = 0;
 	while (true) {
-		const events = await readWorkflowRunEvents(runRoot);
+		const events = await readRunEvents(runRoot);
 		for (const event of events.slice(written)) process.stdout.write(`${JSON.stringify(event)}\n`);
 		written = events.length;
 		if (!options.follow) return;
-		const info = await getWorkflowRunInfo(runRoot);
+		const info = await getRunInfo(runRoot);
 		if (info.status !== "running" && written >= events.length) return;
 		await delay(1000);
 	}
@@ -213,16 +213,16 @@ function startDetachedExecuteRun(runId: string): void {
 function startedRunInfo(input: {
 	readonly id: string;
 	readonly name: string;
-	readonly workflow: AnyWorkflowDeclaration;
+	readonly workflow: PalantirAnyWorkflowDeclaration;
 	readonly runRoot: string;
 	readonly createdAt: string;
-}): WorkflowRunInfo {
+}): PalantirRunInfo {
 	return {
 		version: 1,
 		id: input.id,
 		name: input.name,
 		path: input.runRoot,
-		rootWorkflowId: input.workflow.id,
+		entrypointWorkflowId: input.workflow.id,
 		currentWorkflowId: input.workflow.id,
 		status: "running",
 		health: "healthy",
@@ -231,16 +231,16 @@ function startedRunInfo(input: {
 	};
 }
 
-async function readOptionalWorkflowLaunchRequest(runRoot: string) {
+async function readOptionalRunLaunchRequest(runRoot: string) {
 	try {
-		return await readWorkflowLaunchRequest(runRoot);
+		return await readRunLaunchRequest(runRoot);
 	} catch (error) {
 		if (isNodeError(error) && error.code === "ENOENT") return undefined;
 		throw error;
 	}
 }
 
-async function readWorkflowRunEvents(runRoot: string): Promise<readonly Record<string, unknown>[]> {
+async function readRunEvents(runRoot: string): Promise<readonly Record<string, unknown>[]> {
 	try {
 		const manifest = JSON.parse(await readFile(join(runRoot, "current", "manifest.json"), "utf8")) as { events?: readonly Record<string, unknown>[] };
 		return manifest.events ?? [];

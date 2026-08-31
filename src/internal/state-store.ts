@@ -1,45 +1,45 @@
 import { readFile } from "node:fs/promises";
-import type { WorkflowStateDefinition, WorkflowState } from "../api.ts";
+import type { PalantirWorkflowStateDefinition, PalantirWorkflowState } from "../api.ts";
 import { isNodeError } from "./errors.ts";
 import { writeJsonAtomically } from "./json-file.ts";
 
-export class MemoryWorkflowState implements WorkflowState {
+export class PalantirMemoryWorkflowState implements PalantirWorkflowState {
 	private readonly data = new Map<string, unknown>();
 
-	async get<T>(state: WorkflowStateDefinition<T>): Promise<T> {
+	async get<T>(state: PalantirWorkflowStateDefinition<T>): Promise<T> {
 		const value = await this.getOptional(state);
 		if (value === undefined) throw new Error(`Missing workflow state: ${state.id}`);
 		return value;
 	}
 
-	async getOptional<T>(state: WorkflowStateDefinition<T>): Promise<T | undefined> {
+	async getOptional<T>(state: PalantirWorkflowStateDefinition<T>): Promise<T | undefined> {
 		if (!this.data.has(state.id)) return undefined;
 		return state.schema.parse(this.data.get(state.id));
 	}
 
-	async set<T>(state: WorkflowStateDefinition<T>, value: T): Promise<void> {
+	async set<T>(state: PalantirWorkflowStateDefinition<T>, value: T): Promise<void> {
 		this.data.set(state.id, state.schema.parse(value));
 	}
 }
 
-export class JsonWorkflowState implements WorkflowState {
+export class PalantirJsonWorkflowState implements PalantirWorkflowState {
 	private writeChain: Promise<void> = Promise.resolve();
 
 	constructor(private readonly stateFile: string) {}
 
-	async get<T>(state: WorkflowStateDefinition<T>): Promise<T> {
+	async get<T>(state: PalantirWorkflowStateDefinition<T>): Promise<T> {
 		const value = await this.getOptional(state);
 		if (value === undefined) throw new Error(`Missing workflow state: ${state.id}`);
 		return value;
 	}
 
-	async getOptional<T>(state: WorkflowStateDefinition<T>): Promise<T | undefined> {
+	async getOptional<T>(state: PalantirWorkflowStateDefinition<T>): Promise<T | undefined> {
 		const data = await this.readStateFile();
 		if (!Object.prototype.hasOwnProperty.call(data, state.id)) return undefined;
 		return state.schema.parse(data[state.id]);
 	}
 
-	async set<T>(state: WorkflowStateDefinition<T>, value: T): Promise<void> {
+	async set<T>(state: PalantirWorkflowStateDefinition<T>, value: T): Promise<void> {
 		const parsedValue = state.schema.parse(value);
 		this.writeChain = this.writeChain.then(async () => {
 			const data = await this.readStateFile();
