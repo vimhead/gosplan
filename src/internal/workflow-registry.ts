@@ -52,7 +52,7 @@ export class PalantirWorkflowRegistry {
 	}
 
 	launchableEntries(): PalantirRegisteredWorkflow[] {
-		return this.sortedEntries().filter(({ workflow }) => workflow.displayTitle !== null);
+		return this.sortedEntries().filter(({ workflow }) => workflow.isEntrypoint);
 	}
 
 	workflowById(workflowId: string): PalantirAnyWorkflowDeclaration | undefined {
@@ -94,7 +94,7 @@ export class PalantirWorkflowRegistry {
 
 	private sortedEntries(): PalantirRegisteredWorkflow[] {
 		return Array.from(this.entries.values()).sort((left, right) =>
-			(left.workflow.displayTitle ?? left.workflow.id).localeCompare(right.workflow.displayTitle ?? right.workflow.id),
+			(left.workflow.title ?? left.workflow.id).localeCompare(right.workflow.title ?? right.workflow.id),
 		);
 	}
 }
@@ -139,7 +139,7 @@ function assertGateWorkflow(workflow: PalantirAnyWorkflowDeclaration): void {
 }
 
 function defaultGateDescription(workflow: PalantirAnyWorkflowDeclaration): string {
-	return workflow.description ?? workflow.displayTitle ?? workflow.id;
+	return workflow.description ?? workflow.title ?? workflow.id;
 }
 
 function validateGateDescription(description: string, workflowId: string): string {
@@ -160,9 +160,9 @@ function inspectedWorkflowInfo(entry: PalantirRegisteredWorkflow): PalantirInspe
 function workflowInfo(entry: PalantirRegisteredWorkflow): PalantirRegisteredWorkflowInfo {
 	return {
 		id: entry.workflow.id,
-		title: entry.workflow.displayTitle,
+		title: entry.workflow.title ?? null,
 		description: entry.workflow.description,
-		isEntrypoint: entry.workflow.displayTitle !== null,
+		isEntrypoint: entry.workflow.isEntrypoint,
 		plugin: entry.plugin,
 	};
 }

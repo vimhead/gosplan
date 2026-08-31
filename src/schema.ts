@@ -1,6 +1,9 @@
 import type { PalantirAnyWorkflowDeclaration, PalantirWorkflowUiField } from "./api.ts";
 
-export function assertLaunchableWorkflow(_workflow: PalantirAnyWorkflowDeclaration): void {}
+export function assertLaunchableWorkflow(workflow: PalantirAnyWorkflowDeclaration): void {
+	if (!workflow.isEntrypoint) return;
+	if (!workflow.title || workflow.title.trim().length === 0) throw new Error(`Entrypoint workflow requires a title: ${workflow.id}`);
+}
 
 export function inferInputKind(schema: unknown, uiField: PalantirWorkflowUiField | undefined): PalantirWorkflowUiField["input"] | undefined {
 	if (uiField?.input !== undefined) return uiField.input;

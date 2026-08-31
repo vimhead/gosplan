@@ -18,7 +18,8 @@ export type PalantirWorkflowDeclaration<
 > = {
 	readonly kind: typeof WORKFLOW_DECLARATION_KIND;
 	readonly id: Id;
-	readonly displayTitle: string | null;
+	readonly title?: string;
+	readonly isEntrypoint: boolean;
 	readonly description?: string;
 	readonly config?: ConfigSchema;
 	readonly params: ParamsSchema;
@@ -80,7 +81,8 @@ export type PalantirWorkflowDefinition<
 	ParamsSchema extends z.ZodType = z.ZodType,
 > = {
 	readonly id?: Id;
-	readonly displayTitle: string | null;
+	readonly title?: string;
+	readonly isEntrypoint: boolean;
 	readonly description?: string;
 	readonly config?: ConfigSchema;
 	readonly params: ParamsSchema;
@@ -90,7 +92,8 @@ export type PalantirWorkflowDefinition<
 
 export type PalantirAnyWorkflowDefinition = {
 	readonly id?: string;
-	readonly displayTitle: string | null;
+	readonly title?: string;
+	readonly isEntrypoint: boolean;
 	readonly description?: string;
 	readonly config?: z.ZodType;
 	readonly params: z.ZodType;
@@ -676,12 +679,13 @@ function qualifyStateTree(pluginId: string, node: PalantirWorkflowPluginStateTre
 
 export function isWorkflowDeclaration(value: unknown): value is PalantirAnyWorkflowDeclaration {
 	if (!value || typeof value !== "object") return false;
-	const candidate = value as { kind?: unknown; id?: unknown; displayTitle?: unknown; params?: unknown };
+	const candidate = value as { kind?: unknown; id?: unknown; title?: unknown; isEntrypoint?: unknown; params?: unknown };
 	return (
 		candidate.kind === WORKFLOW_DECLARATION_KIND &&
 		typeof candidate.id === "string" &&
 		candidate.id.length > 0 &&
-		(candidate.displayTitle === null || typeof candidate.displayTitle === "string") &&
+		(candidate.title === undefined || typeof candidate.title === "string") &&
+		typeof candidate.isEntrypoint === "boolean" &&
 		Boolean(candidate.params)
 	);
 }

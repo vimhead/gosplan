@@ -80,7 +80,8 @@ import { z } from "zod";
 import type { PalantirWorkflowDefinition } from "palantir";
 
 export const planWorkflow = {
-  displayTitle: "Plan",
+  title: "Plan",
+  isEntrypoint: true,
   params: z.object({ task: z.string() }),
 } as const satisfies PalantirWorkflowDefinition;
 ```
@@ -90,7 +91,8 @@ Explicit ids are allowed only when fully qualified with the plugin id.
 ```ts
 export const legacyWorkflow = {
   id: "example.oldPlan",
-  displayTitle: "Plan",
+  title: "Plan",
+  isEntrypoint: true,
   params,
 } as const satisfies PalantirWorkflowDefinition;
 ```
@@ -220,7 +222,7 @@ const reviewRouterParamsSchema = z.object({
 });
 
 export const reviewRouterWorkflow = {
-  displayTitle: null,
+  isEntrypoint: false,
   gate: {
     enabled: true,
     fields: ["decision", "notes"] as const,
