@@ -164,9 +164,20 @@ async function resumeRun(run: string, args: readonly string[]): Promise<void> {
 	const runRoot = await resolveRunRoot(process.cwd(), run);
 	const runInfo = await getRunInfo(runRoot);
 	const input = parseResumeRunInput(await readStdinJson());
-	await writeRunResumeRequest(runRoot, { version: 1, type: "resume", id: runInfo.id, params: input.params, createdAt: new Date().toISOString() });
+	const params = await parseResumeParams(runInfo, input.params);
+	await writeRunResumeRequest(runRoot, { version: 1, type: "resume", id: runInfo.id, params, createdAt: new Date().toISOString() });
 	startDetachedExecuteRun(runInfo.id);
 	writeJson({ run: { ...runInfo, status: "running", health: "healthy", interruption: undefined, updatedAt: new Date().toISOString() } });
+}
+
+async function parseResumeParams(runInfo: PalantirRunInfo, params: unknown): Promise<unknown> {
+	if (runInfo.status === "interrupted" && params === undefined) throw new Error(`Interrupted workflow resume requires params: ${runInfo.name}`);
+	if (params === undefined) return undefined;
+	if (!runInfo.currentWorkflowId) throw new Error(`Run has no current workflow: ${runInfo.name}`);
+	const project = await loadPalantirProject(process.cwd());
+	const workflow = project.registry.workflowById(runInfo.currentWorkflowId);
+	if (!workflow) throw new Error(`Unknown workflow for resumed run: ${runInfo.currentWorkflowId}`);
+	return workflow.params.parse(params);
 }
 
 async function waitRun(run: string): Promise<void> {

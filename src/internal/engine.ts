@@ -156,12 +156,15 @@ export class PalantirEngine {
 			const workflow = this.registry.workflowById(current.workflowId);
 			if (!workflow) throw new Error(`Unknown workflow for resumed run: ${current.workflowId}`);
 			if (state.status === "interrupted") {
-				await session.state.replaceCurrentParams(workflow.params.parse(params));
+				const parsedParams = workflow.params.parse(params);
+				await session.state.replaceCurrentParams(parsedParams);
+				await recordRunEvent(session, { type: "run.resumed", workflowId: workflow.id, cwd: session.run.cwd });
 				const resumedCurrent = session.state.currentState().current;
 				if (!resumedCurrent) throw new Error(`Run is not resumable: ${runRoot}`);
 				isLeaseOwnedByScheduler = true;
 				return this.runScheduler(session, toWorkflowStep(workflow, resumedCurrent));
 			}
+			await recordRunEvent(session, { type: "run.resumed", workflowId: workflow.id, cwd: session.run.cwd });
 			isLeaseOwnedByScheduler = true;
 			return this.runScheduler(session, toWorkflowStep(workflow, current));
 		} finally {
@@ -311,7 +314,6 @@ export class PalantirEngine {
 			const cwd = currentState.current?.cwd ?? currentState.workspace;
 			const env = currentState.current?.env ?? {};
 			const run = await this.buildRun({ id: currentState.id, currentRoot, workspace: currentState.workspace, cwd, env, signal: activeRun.controller.signal, logger });
-			await logger.record({ type: "run.resumed", workflowId: currentState.current?.workflowId, cwd });
 			return { runRoot, run, state, lease, runStore, logger, activeRun };
 		} catch (error) {
 			this.failActiveRun(runRoot, activeRun);
