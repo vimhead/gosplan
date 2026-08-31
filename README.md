@@ -161,7 +161,7 @@ palantir runs resume quiet-river-lantern --params '{"decision":"accept"}'
 ```
 
 `run` and `resume` start detached execution and return immediately with run JSON.
-Use the stable id, generated name, or run path for later commands. `runs metrics` reports cumulative and per-stage timing, token usage, and cost. Delete is allowed only after a run is no longer running.
+Use the stable id, generated name, or run path for later commands. `runs metrics` reports run totals plus per-workflow, per-agent, and per-command timing, token usage, and cost. Delete is allowed only after a run is no longer running.
 
 ## TypeScript client
 

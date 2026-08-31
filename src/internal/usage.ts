@@ -1,6 +1,6 @@
-import type { WorkflowUsage } from "../api.ts";
+import type { AgentUsage } from "../api.ts";
 
-export function workflowUsageFromValue(value: unknown): WorkflowUsage | undefined {
+export function agentUsageFromValue(value: unknown): AgentUsage | undefined {
 	if (!value || typeof value !== "object") return undefined;
 	const usage = value as Record<string, unknown>;
 	const input = numberField(usage.input);
@@ -27,11 +27,11 @@ export function workflowUsageFromValue(value: unknown): WorkflowUsage | undefine
 	};
 }
 
-export function totalWorkflowUsage(usages: readonly WorkflowUsage[]): WorkflowUsage {
-	return usages.reduce(addWorkflowUsage, emptyWorkflowUsage());
+export function totalAgentUsage(usages: readonly AgentUsage[]): AgentUsage {
+	return usages.reduce(addAgentUsage, emptyAgentUsage());
 }
 
-export function addWorkflowUsage(left: WorkflowUsage, right: WorkflowUsage): WorkflowUsage {
+export function addAgentUsage(left: AgentUsage, right: AgentUsage): AgentUsage {
 	const reasoning = left.reasoning === undefined && right.reasoning === undefined ? undefined : (left.reasoning ?? 0) + (right.reasoning ?? 0);
 	return {
 		input: left.input + right.input,
@@ -50,7 +50,7 @@ export function addWorkflowUsage(left: WorkflowUsage, right: WorkflowUsage): Wor
 	};
 }
 
-export function emptyWorkflowUsage(): WorkflowUsage {
+export function emptyAgentUsage(): AgentUsage {
 	return {
 		input: 0,
 		output: 0,

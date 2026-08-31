@@ -7,7 +7,7 @@ import type {
 	WorkflowInterruptedLaunchResult,
 	WorkflowRunCheckpoint,
 	WorkflowRunInfo,
-	WorkflowRunMetrics,
+	RunMetrics,
 	WorkflowStateReader,
 } from "./api.ts";
 import { loadPalantirProject } from "./plugin-loader.ts";
@@ -30,7 +30,7 @@ export type PalantirClient = {
 		list(): Promise<WorkflowRunInfo[]>;
 		inspect(run: string): Promise<WorkflowRunInfo>;
 		checkpoints(run: string): Promise<WorkflowRunCheckpoint[]>;
-		metrics(run: string): Promise<WorkflowRunMetrics>;
+		metrics(run: string): Promise<RunMetrics>;
 		gate(run: string): Promise<WorkflowInterruptedLaunchResult>;
 		rollback(run: string, checkpointId: string): Promise<WorkflowRunInfo>;
 		stop(run: string): Promise<WorkflowRunInfo>;
@@ -55,7 +55,7 @@ export function createPalantirClient(input: PalantirClientInput = {}): PalantirC
 			list: async () => (await processRunner.readJson<{ runs: WorkflowRunInfo[] }>(["runs", "list"])).runs,
 			inspect: async (run) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "inspect", run])).run,
 			checkpoints: async (run) => (await processRunner.readJson<{ checkpoints: WorkflowRunCheckpoint[] }>(["runs", "checkpoints", run])).checkpoints,
-			metrics: async (run) => (await processRunner.readJson<{ metrics: WorkflowRunMetrics }>(["runs", "metrics", run])).metrics,
+			metrics: async (run) => (await processRunner.readJson<{ metrics: RunMetrics }>(["runs", "metrics", run])).metrics,
 			gate: async (run) => (await processRunner.readJson<{ launch: WorkflowInterruptedLaunchResult }>(["runs", "gate", run])).launch,
 			rollback: async (run, checkpointId) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "rollback", run, checkpointId])).run,
 			stop: async (run) => (await processRunner.readJson<{ run: WorkflowRunInfo }>(["runs", "stop", run])).run,

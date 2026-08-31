@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import type { AgentPromptInput, AgentRunInput, AgentRunRawAttempt, AgentRunResult, AgentSessionEvents, AgentSpawnInput, WorkflowAgentSession, WorkflowUsage } from "../api.ts";
+import type { AgentPromptInput, AgentRunInput, AgentRunRawAttempt, AgentRunResult, AgentSessionEvents, AgentSpawnInput, WorkflowAgentSession, AgentUsage } from "../api.ts";
 import {
 	AGENT_RESPONSE_TOOL_NAME,
 	AgentResponseCollector,
@@ -22,7 +22,7 @@ import { errorMessage } from "./errors.ts";
 import type { WorkflowRunLogs } from "./logs.ts";
 import { safeFileName } from "./file-names.ts";
 import type { WorkflowRunLogger } from "./run-log.ts";
-import { emptyWorkflowUsage, totalWorkflowUsage, workflowUsageFromValue } from "./usage.ts";
+import { agentUsageFromValue, emptyAgentUsage, totalAgentUsage } from "./usage.ts";
 
 const DEFAULT_AGENT_ATTEMPTS = 3;
 const DEFAULT_AGENT_TOOL_ALLOWLIST = ["read", "bash", "edit", "write", AGENT_RESPONSE_TOOL_NAME] as const;
@@ -133,7 +133,7 @@ class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
 				try {
 					if (!raw.responseToolCalled) throw new Error(`Agent did not call ${AGENT_RESPONSE_TOOL_NAME}`);
 					const response = agentInput.response.parse(raw.toolResponse);
-					const usage = totalWorkflowUsage(attempts.map((candidate) => candidate.usage));
+					const usage = totalAgentUsage(attempts.map((candidate) => candidate.usage));
 					const result: AgentRunResult<ResponseSchema> = {
 						label: this.label,
 						cwd: this.cwd,
@@ -154,7 +154,7 @@ class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
 					);
 					await this.input.logger.record({ type: "agent.attempt.failed", label: this.label, attempt, error: message });
 					if (attempt === maxAttempts) {
-						const usage = totalWorkflowUsage(attempts.map((candidate) => candidate.usage));
+						const usage = totalAgentUsage(attempts.map((candidate) => candidate.usage));
 						isTerminalEventRecorded = true;
 						await this.input.logger.record({ type: "agent.failed", label: this.label, attempts: attempt, durationMs: Date.now() - startedAtMs, usage, error: message });
 						throw new Error(
@@ -172,7 +172,7 @@ class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
 					label: this.label,
 					attempts: attempts.length,
 					durationMs: Date.now() - startedAtMs,
-					usage: totalWorkflowUsage(attempts.map((candidate) => candidate.usage)),
+					usage: totalAgentUsage(attempts.map((candidate) => candidate.usage)),
 					error: errorMessage(error),
 				});
 			}
@@ -232,13 +232,13 @@ class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
 	}
 }
 
-function usageFromMessages(messages: readonly unknown[]): WorkflowUsage {
-	return totalWorkflowUsage(messages.map(usageFromMessage).filter((usage): usage is WorkflowUsage => usage !== undefined));
+function usageFromMessages(messages: readonly unknown[]): AgentUsage {
+	return totalAgentUsage(messages.map(usageFromMessage).filter((usage): usage is AgentUsage => usage !== undefined));
 }
 
-function usageFromMessage(message: unknown): WorkflowUsage | undefined {
+function usageFromMessage(message: unknown): AgentUsage | undefined {
 	if (!message || typeof message !== "object" || !("usage" in message)) return undefined;
-	return workflowUsageFromValue((message as { usage?: unknown }).usage) ?? emptyWorkflowUsage();
+	return agentUsageFromValue((message as { usage?: unknown }).usage) ?? emptyAgentUsage();
 }
 
 function withResponseToolInstruction(

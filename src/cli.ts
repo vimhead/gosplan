@@ -11,7 +11,7 @@ import { readWorkflowLaunchRequest, readWorkflowResumeRequest, writeWorkflowLaun
 import { generateWorkflowRunName } from "./internal/run-names.ts";
 import { getWorkflowRunLeaseOwner } from "./internal/run-lease.ts";
 import { WorkflowRunStore } from "./internal/run-store.ts";
-import { readWorkflowRunMetrics } from "./internal/metrics.ts";
+import { readRunMetrics } from "./internal/metrics.ts";
 import { getWorkflowRunInfo, listWorkflowRuns, resolveWorkflowRunRoot } from "./internal/runtime-state.ts";
 
 const RUNS_ROOT = join(".palantir", "runs");
@@ -74,7 +74,7 @@ async function runCommand(args: readonly string[]): Promise<void> {
 	}
 	if (command === "runs" && subcommand === "metrics" && rest[0]) {
 		const runRoot = await resolveWorkflowRunRoot(process.cwd(), rest[0]);
-		writeJson({ metrics: await readWorkflowRunMetrics(runRoot) });
+		writeJson({ metrics: await readRunMetrics(runRoot) });
 		return;
 	}
 	if (command === "runs" && subcommand === "gate" && rest[0]) {

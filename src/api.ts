@@ -318,8 +318,8 @@ export type WorkflowInterruptedLaunchResult = {
 
 export type WorkflowLaunchResult = WorkflowStartedLaunchResult | WorkflowCompletedLaunchResult | WorkflowFailedLaunchResult | WorkflowInterruptedLaunchResult;
 
-export type WorkflowRunStatus = "running" | "interrupted" | "completed" | "failed";
-export type WorkflowRunHealth = "healthy" | "unhealthy";
+export type RunStatus = "running" | "interrupted" | "completed" | "failed";
+export type RunHealth = "healthy" | "unhealthy";
 
 export type WorkflowRunInfo = {
 	readonly version: number;
@@ -328,8 +328,8 @@ export type WorkflowRunInfo = {
 	readonly path: string;
 	readonly rootWorkflowId: string;
 	readonly currentWorkflowId?: string;
-	readonly status: WorkflowRunStatus;
-	readonly health: WorkflowRunHealth;
+	readonly status: RunStatus;
+	readonly health: RunHealth;
 	readonly startedAt: string;
 	readonly updatedAt: string;
 };
@@ -439,7 +439,7 @@ export type AgentSessionEvents = {
 	on(name: string, handler: (data: unknown) => void): WorkflowDispose;
 };
 
-export type WorkflowUsageCost = {
+export type AgentUsageCost = {
 	readonly input: number;
 	readonly output: number;
 	readonly cacheRead: number;
@@ -447,42 +447,66 @@ export type WorkflowUsageCost = {
 	readonly total: number;
 };
 
-export type WorkflowUsage = {
+export type AgentUsage = {
 	readonly input: number;
 	readonly output: number;
 	readonly cacheRead: number;
 	readonly cacheWrite: number;
 	readonly reasoning?: number;
 	readonly totalTokens: number;
-	readonly cost: WorkflowUsageCost;
+	readonly cost: AgentUsageCost;
 };
 
-export type WorkflowStageMetrics = {
+export type AgentMetrics = {
+	readonly index: number;
+	readonly label: string;
+	readonly status: "running" | "completed" | "failed";
+	readonly startedAt: string;
+	readonly endedAt?: string;
+	readonly wallMs: number;
+	readonly attempts?: number;
+	readonly usage: AgentUsage;
+};
+
+export type CommandMetrics = {
+	readonly index: number;
+	readonly label: string;
+	readonly status: "running" | "completed" | "failed";
+	readonly startedAt: string;
+	readonly endedAt?: string;
+	readonly wallMs: number;
+	readonly exitCode?: number | null;
+	readonly killed?: boolean;
+};
+
+export type WorkflowMetrics = {
 	readonly index: number;
 	readonly workflowId: string;
 	readonly status: "running" | "completed" | "failed" | "transitioned";
 	readonly startedAt: string;
 	readonly endedAt?: string;
 	readonly wallMs: number;
-	readonly agentMs: number;
-	readonly commandMs: number;
-	readonly codeMs: number;
-	readonly usage: WorkflowUsage;
+	readonly ownMs: number;
+	readonly agentsMs: number;
+	readonly commandsMs: number;
+	readonly agentUsage: AgentUsage;
+	readonly agents: readonly AgentMetrics[];
+	readonly commands: readonly CommandMetrics[];
 };
 
-export type WorkflowRunMetrics = {
-	readonly status: WorkflowRunStatus;
+export type RunMetrics = {
+	readonly status: RunStatus;
 	readonly startedAt: string;
 	readonly endedAt?: string;
 	readonly wallMs: number;
 	readonly activeMs: number;
 	readonly gateWaitMs: number;
-	readonly workflowMs: number;
-	readonly agentMs: number;
-	readonly commandMs: number;
-	readonly codeMs: number;
-	readonly usage: WorkflowUsage;
-	readonly stages: readonly WorkflowStageMetrics[];
+	readonly workflowsMs: number;
+	readonly workflowOwnMs: number;
+	readonly agentsMs: number;
+	readonly commandsMs: number;
+	readonly agentUsage: AgentUsage;
+	readonly workflows: readonly WorkflowMetrics[];
 };
 
 export type AgentRunRawAttempt = {
@@ -490,7 +514,7 @@ export type AgentRunRawAttempt = {
 	readonly text: string;
 	readonly messages: unknown[];
 	readonly responseToolCalled: boolean;
-	readonly usage: WorkflowUsage;
+	readonly usage: AgentUsage;
 	readonly toolResponse?: unknown;
 	readonly sessionFile?: string;
 	readonly error?: string;
@@ -500,12 +524,12 @@ export type AgentRunResult<ResponseSchema extends z.ZodType> = {
 	readonly label: string;
 	readonly cwd: string;
 	readonly response: z.output<ResponseSchema>;
-	readonly usage: WorkflowUsage;
+	readonly usage: AgentUsage;
 	readonly raw: {
 		readonly text: string;
 		readonly messages: unknown[];
 		readonly responseToolCalled: boolean;
-		readonly usage: WorkflowUsage;
+		readonly usage: AgentUsage;
 		readonly toolResponse?: unknown;
 		readonly sessionFile?: string;
 		readonly attempts: readonly AgentRunRawAttempt[];

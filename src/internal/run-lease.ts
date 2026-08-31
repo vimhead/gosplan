@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { WorkflowRunHealth } from "../api.ts";
+import type { RunHealth } from "../api.ts";
 import { isNodeError } from "./errors.ts";
 import { writeJsonAtomically } from "./json-file.ts";
 
@@ -104,7 +104,7 @@ export type WorkflowRunProcessOwner = {
 	readonly command: readonly string[];
 };
 
-export async function getWorkflowRunLeaseHealth(runRoot: string): Promise<WorkflowRunHealth> {
+export async function getWorkflowRunLeaseHealth(runRoot: string): Promise<RunHealth> {
 	const lockRoot = join(runRoot, LOCK_DIR_NAME);
 	const owner = await readWorkflowRunLeaseOwner(join(lockRoot, OWNER_FILE_NAME));
 	if (owner) return isWorkflowRunLeaseStale(owner) ? "unhealthy" : "healthy";

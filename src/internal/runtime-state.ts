@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import type { WorkflowOutcomeMetadata, WorkflowRunHealth, WorkflowRunInfo, WorkflowRunStatus } from "../api.ts";
+import type { RunHealth, RunStatus, WorkflowOutcomeMetadata, WorkflowRunInfo } from "../api.ts";
 import { isNodeError } from "./errors.ts";
 import { getWorkflowRunLeaseHealth } from "./run-lease.ts";
 import { writeJsonAtomically } from "./json-file.ts";
@@ -49,7 +49,7 @@ export type WorkflowRuntimeState = {
 	readonly name: string;
 	readonly rootWorkflowId: string;
 	readonly workspace: string;
-	readonly status: WorkflowRunStatus;
+	readonly status: RunStatus;
 	readonly current: RuntimeWorkflowStep | null;
 	readonly lastCompleted: RuntimeWorkflowCompletion | null;
 	readonly outcome: RuntimeWorkflowOutcome | null;
@@ -234,7 +234,7 @@ function workflowRunRootCandidates(sessionCwd: string, run: string): string[] {
 	return Array.from(new Set(candidates));
 }
 
-async function workflowRunHealth(runRoot: string, status: WorkflowRunStatus): Promise<WorkflowRunHealth> {
+async function workflowRunHealth(runRoot: string, status: RunStatus): Promise<RunHealth> {
 	if (status === "failed") return "unhealthy";
 	if (status !== "running") return "healthy";
 	return getWorkflowRunLeaseHealth(runRoot);
