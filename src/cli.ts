@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { findPalantirProject, loadPalantirProject } from "./plugin-loader.ts";
@@ -15,6 +15,7 @@ import { readRunMetrics } from "./internal/metrics.ts";
 import { getRunInfo, listRuns, resolveRunRoot } from "./internal/run-state.ts";
 
 const RUNS_ROOT = join(".palantir", "runs");
+const RUN_WAIT_INTERVAL_MS = 1000;
 
 export async function main(args: readonly string[]): Promise<void> {
 	try {
@@ -45,6 +46,10 @@ async function runCommand(args: readonly string[]): Promise<void> {
 	}
 	if (command === "runs" && subcommand === "resume" && rest[0]) {
 		await resumeRun(rest[0], rest.slice(1));
+		return;
+	}
+	if (command === "runs" && subcommand === "wait" && rest[0]) {
+		await waitRun(rest[0]);
 		return;
 	}
 	if (command === "runs" && subcommand === "rollback" && rest[0]) {
@@ -125,6 +130,44 @@ async function resumeRun(run: string, args: readonly string[]): Promise<void> {
 	await writeRunResumeRequest(runRoot, { version: 1, type: "resume", id: runInfo.id, params, createdAt: new Date().toISOString() });
 	startDetachedExecuteRun(runInfo.id);
 	writeJson({ run: { ...runInfo, status: "running", health: "healthy", updatedAt: new Date().toISOString() } });
+}
+
+async function waitRun(run: string): Promise<void> {
+	writeJson({ run: await waitForInactiveRun(run) });
+}
+
+async function waitForInactiveRun(run: string): Promise<PalantirRunInfo> {
+	let runRoot: string | undefined;
+	while (true) {
+		runRoot ??= await resolveWaitableRunRoot(process.cwd(), run);
+		try {
+			const runInfo = await getRunInfo(runRoot);
+			if (runInfo.status !== "running" || runInfo.health === "unhealthy") return runInfo;
+		} catch (error) {
+			if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+		}
+		await delay(RUN_WAIT_INTERVAL_MS);
+	}
+}
+
+async function resolveWaitableRunRoot(sessionCwd: string, run: string): Promise<string> {
+	try {
+		return await resolveRunRoot(sessionCwd, run);
+	} catch (error) {
+		for (const candidate of [resolve(sessionCwd, run), resolve(sessionCwd, RUNS_ROOT, run)]) {
+			if (await isDirectory(candidate)) return candidate;
+		}
+		throw error;
+	}
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+	try {
+		return (await stat(path)).isDirectory();
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return false;
+		throw error;
+	}
 }
 
 async function executeRun(runId: string): Promise<void> {

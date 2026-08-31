@@ -170,6 +170,8 @@ palantir runs start example.plan --params '{"task":"Add tests"}'
 
 palantir runs list
 
+palantir runs wait quiet-river-lantern
+
 palantir runs logs quiet-river-lantern --follow
 
 palantir runs metrics quiet-river-lantern
@@ -181,8 +183,8 @@ palantir runs delete quiet-river-lantern
 palantir runs resume quiet-river-lantern --params '{"decision":"accept"}'
 ```
 
-`run` and `resume` start detached execution and return immediately with run JSON.
-Use the stable id, generated name, or run path for later commands. `runs metrics` reports run totals plus per-workflow, per-agent, and per-command timing, token usage, and cost. Delete is allowed only after a run is no longer running.
+`start` and `resume` start detached execution and return immediately with run JSON.
+Use `runs wait` to block until a run is no longer active. Use the stable id, generated name, or run path for later commands. `runs metrics` reports run totals plus per-workflow, per-agent, and per-command timing, token usage, and cost. Delete is allowed only after a run is no longer running.
 
 ## TypeScript client
 

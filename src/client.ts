@@ -31,6 +31,7 @@ export type PalantirClient = {
 	readonly runs: {
 		start(input: { readonly workflowId: string; readonly params: unknown; readonly configOverride?: unknown }): Promise<PalantirRunInfo>;
 		resume(input: { readonly run: string; readonly params?: unknown }): Promise<PalantirRunInfo>;
+		wait(run: string): Promise<PalantirRunInfo>;
 		list(): Promise<PalantirRunInfo[]>;
 		inspect(run: string): Promise<PalantirRunInfo>;
 		checkpoints(run: string): Promise<PalantirRunCheckpoint[]>;
@@ -59,6 +60,7 @@ export function createPalantirClient(input: PalantirClientInput = {}): PalantirC
 		runs: {
 			start: async (startInput) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "start", startInput.workflowId, "--params", JSON.stringify(startInput.params), ...configArgs(startInput.configOverride)])).run,
 			resume: async (resumeInput) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "resume", resumeInput.run, ...paramsArgs(resumeInput.params)])).run,
+			wait: async (run) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "wait", run])).run,
 			list: async () => (await processRunner.readJson<{ runs: PalantirRunInfo[] }>(["runs", "list"])).runs,
 			inspect: async (run) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "inspect", run])).run,
 			checkpoints: async (run) => (await processRunner.readJson<{ checkpoints: PalantirRunCheckpoint[] }>(["runs", "checkpoints", run])).checkpoints,
