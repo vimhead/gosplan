@@ -122,11 +122,13 @@ async function inspectSeerMode(): Promise<void> {
 }
 
 async function startRun(workflowId: string, args: readonly string[]): Promise<void> {
+	assertNoStructuredInputArgs("runs start", args);
 	const project = await loadPalantirProject(process.cwd());
 	const workflow = project.registry.workflowById(workflowId);
 	if (!workflow) throw new Error(`Unknown workflow: ${workflowId}`);
-	const params = workflow.params.parse(parseJsonOption(args, "--params") ?? {});
-	const configOverride = parseJsonOption(args, "--config");
+	const input = parseStartRunInput(await readStdinJson());
+	const params = workflow.params.parse(input.params ?? {});
+	const configOverride = input.config;
 	const id = randomUUID();
 	const name = generateRunName(new Set((await listRuns(process.cwd())).map((run) => run.name)));
 	const runRoot = resolve(process.cwd(), RUNS_ROOT, id);
@@ -138,10 +140,11 @@ async function startRun(workflowId: string, args: readonly string[]): Promise<vo
 }
 
 async function resumeRun(run: string, args: readonly string[]): Promise<void> {
+	assertNoStructuredInputArgs("runs resume", args);
 	const runRoot = await resolveRunRoot(process.cwd(), run);
 	const runInfo = await getRunInfo(runRoot);
-	const params = parseJsonOption(args, "--params");
-	await writeRunResumeRequest(runRoot, { version: 1, type: "resume", id: runInfo.id, params, createdAt: new Date().toISOString() });
+	const input = parseResumeRunInput(await readStdinJson());
+	await writeRunResumeRequest(runRoot, { version: 1, type: "resume", id: runInfo.id, params: input.params, createdAt: new Date().toISOString() });
 	startDetachedExecuteRun(runInfo.id);
 	writeJson({ run: { ...runInfo, status: "running", health: "healthy", interruption: undefined, updatedAt: new Date().toISOString() } });
 }
@@ -311,12 +314,53 @@ async function readRunEvents(runRoot: string): Promise<readonly Record<string, u
 	}
 }
 
-function parseJsonOption(args: readonly string[], name: string): unknown {
-	const index = args.indexOf(name);
-	if (index === -1) return undefined;
-	const value = args[index + 1];
-	if (!value) throw new Error(`Missing value for ${name}`);
-	return JSON.parse(value);
+async function readStdinJson(): Promise<unknown | undefined> {
+	const text = await readStdin();
+	const trimmed = text.trim();
+	return trimmed.length === 0 ? undefined : JSON.parse(trimmed);
+}
+
+async function readStdin(): Promise<string> {
+	if (process.stdin.isTTY) return "";
+	return new Promise((resolvePromise, reject) => {
+		let text = "";
+		process.stdin.setEncoding("utf8");
+		process.stdin.on("data", (chunk) => {
+			text += chunk;
+		});
+		process.stdin.on("error", reject);
+		process.stdin.on("end", () => resolvePromise(text));
+		process.stdin.resume();
+	});
+}
+
+function parseStartRunInput(value: unknown): { readonly params?: unknown; readonly config?: unknown } {
+	if (value === undefined) return {};
+	const input = parseStructuredInputObject("runs start", value);
+	assertStructuredInputKeys("runs start", input, ["params", "config"]);
+	return { params: input.params, config: input.config };
+}
+
+function parseResumeRunInput(value: unknown): { readonly params?: unknown } {
+	if (value === undefined) return {};
+	const input = parseStructuredInputObject("runs resume", value);
+	assertStructuredInputKeys("runs resume", input, ["params"]);
+	return { params: input.params };
+}
+
+function parseStructuredInputObject(command: string, value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${command} reads a JSON object from stdin`);
+	return value as Record<string, unknown>;
+}
+
+function assertStructuredInputKeys(command: string, input: Record<string, unknown>, allowedKeys: readonly string[]): void {
+	const allowed = new Set(allowedKeys);
+	const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
+	if (unexpected.length > 0) throw new Error(`${command} stdin JSON has unsupported keys: ${unexpected.join(", ")}`);
+}
+
+function assertNoStructuredInputArgs(command: string, args: readonly string[]): void {
+	if (args.length > 0) throw new Error(`${command} reads structured input from stdin, not CLI arguments: ${args.join(" ")}`);
 }
 
 function sendSignal(processGroupId: number, pid: number, signal: NodeJS.Signals): void {

@@ -59,8 +59,8 @@ export function createPalantirClient(input: PalantirClientInput = {}): PalantirC
 			inspect: async () => (await processRunner.readJson<{ seerMode: PalantirResolvedSeerModeConfig | null }>(["seer", "inspect"])).seerMode,
 		},
 		runs: {
-			start: async (startInput) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "start", startInput.workflowId, "--params", JSON.stringify(startInput.params), ...configArgs(startInput.configOverride)])).run,
-			resume: async (resumeInput) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "resume", resumeInput.run, ...paramsArgs(resumeInput.params)])).run,
+			start: async (startInput) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "start", startInput.workflowId], JSON.stringify(runStartInput(startInput)))).run,
+			resume: async (resumeInput) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "resume", resumeInput.run], runResumeStdin(resumeInput))).run,
 			wait: async (run) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "wait", run])).run,
 			list: async () => (await processRunner.readJson<{ runs: PalantirRunInfo[] }>(["runs", "list"])).runs,
 			inspect: async (run) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "inspect", run])).run,
@@ -98,8 +98,8 @@ class PalantirProcessRunner {
 		this.executablePath = input.executablePath ?? fileURLToPath(new URL("../bin/palantir.mjs", import.meta.url));
 	}
 
-	async readJson<T>(args: readonly string[]): Promise<T> {
-		const result = await this.spawn(args);
+	async readJson<T>(args: readonly string[], stdin?: string): Promise<T> {
+		const result = await this.spawn(args, stdin);
 		const parsed = JSON.parse(result.stdout) as T | { error?: { message?: string } };
 		if (parsed && typeof parsed === "object" && "error" in parsed) throw new Error(parsed.error?.message ?? "Palantir command failed");
 		if (result.exitCode !== 0) throw new Error(result.stderr || `Palantir exited with code ${result.exitCode}`);
@@ -123,9 +123,9 @@ class PalantirProcessRunner {
 		if (exitCode !== 0) throw new Error(stderr || `Palantir exited with code ${exitCode}`);
 	}
 
-	private async spawn(args: readonly string[]): Promise<{ readonly stdout: string; readonly stderr: string; readonly exitCode: number | null }> {
+	private async spawn(args: readonly string[], stdin?: string): Promise<{ readonly stdout: string; readonly stderr: string; readonly exitCode: number | null }> {
 		return new Promise((resolvePromise, reject) => {
-			const child = spawn(process.execPath, [this.executablePath, ...args], { cwd: this.input.spawnCwd, stdio: ["ignore", "pipe", "pipe"] });
+			const child = spawn(process.execPath, [this.executablePath, ...args], { cwd: this.input.spawnCwd, stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
 			let stdout = "";
 			let stderr = "";
 			child.stdout?.on("data", (chunk) => {
@@ -135,15 +135,16 @@ class PalantirProcessRunner {
 				stderr += chunk.toString();
 			});
 			child.on("error", reject);
+			if (stdin !== undefined) child.stdin?.end(stdin);
 			child.on("close", (exitCode) => resolvePromise({ stdout, stderr, exitCode }));
 		});
 	}
 }
 
-function paramsArgs(params: unknown): string[] {
-	return params === undefined ? [] : ["--params", JSON.stringify(params)];
+function runStartInput(input: { readonly params: unknown; readonly configOverride?: unknown }): { readonly params: unknown; readonly config?: unknown } {
+	return input.configOverride === undefined ? { params: input.params } : { params: input.params, config: input.configOverride };
 }
 
-function configArgs(configOverride: unknown): string[] {
-	return configOverride === undefined ? [] : ["--config", JSON.stringify(configOverride)];
+function runResumeStdin(input: { readonly params?: unknown }): string | undefined {
+	return input.params === undefined ? undefined : JSON.stringify({ params: input.params });
 }
