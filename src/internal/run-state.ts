@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import type { PalantirRunHealth, PalantirRunStatus, PalantirRunOutcomeMetadata, PalantirRunInfo } from "../api.ts";
+import type { PalantirRunHealth, PalantirRunStatus, PalantirRunOutcomeMetadata, PalantirRunInfo, PalantirRunInterruption } from "../api.ts";
 import { isNodeError } from "./errors.ts";
 import { getRunLeaseHealth } from "./run-lease.ts";
 import { writeJsonAtomically } from "./json-file.ts";
@@ -16,12 +16,13 @@ type PalantirRunWorkflowStep = {
 	readonly configOverride?: unknown;
 	readonly cwd: string;
 	readonly env: Record<string, string>;
-	readonly gate?: RuntimeGate;
+	readonly interruption?: RuntimeInterruption;
 };
 
-type RuntimeGate = {
+type RuntimeInterruption = {
 	readonly status: "pending" | "satisfied";
 	readonly description?: string;
+	readonly fields?: readonly string[];
 };
 
 type PalantirRunWorkflowCompletion = {
@@ -143,11 +144,11 @@ export class PalantirRunStateStore {
 		});
 	}
 
-	async interruptCurrent(params: unknown, description: string): Promise<void> {
+	async interruptCurrent(params: unknown, interruption: { readonly description: string; readonly fields?: readonly string[] }): Promise<void> {
 		if (!this.state.current) throw new Error("Cannot interrupt run without current step");
 		await this.update({
 			status: "interrupted",
-			current: { ...this.state.current, params, gate: { status: "pending", description } },
+			current: { ...this.state.current, params, interruption: { status: "pending", ...interruption } },
 			outcome: null,
 			failed: null,
 		});
@@ -157,7 +158,7 @@ export class PalantirRunStateStore {
 		if (!this.state.current) throw new Error("Cannot resume run without current step");
 		await this.update({
 			status: "running",
-			current: { ...this.state.current, params, gate: { ...this.state.current.gate, status: "satisfied" } },
+			current: { ...this.state.current, params, interruption: { ...this.state.current.interruption, status: "satisfied" } },
 			outcome: null,
 			failed: null,
 		});
@@ -210,6 +211,7 @@ export async function getRunInfo(runRoot: string): Promise<PalantirRunInfo> {
 		currentWorkflowId: state.current?.workflowId,
 		status: state.status,
 		health: await runHealth(runRoot, state.status),
+		interruption: runInterruption(state),
 		startedAt: state.startedAt,
 		updatedAt: state.updatedAt,
 	};
@@ -278,7 +280,17 @@ function parsePalantirRunState(value: unknown): PalantirRunState {
 
 function assertInterruptedPalantirRunState(state: Partial<PalantirRunState>): void {
 	if (!state.current) throw new Error("Invalid interrupted run current step");
-	const gate = state.current.gate;
-	if (!gate || gate.status !== "pending") throw new Error("Invalid interrupted run gate");
-	if (typeof gate.description !== "string" || gate.description.length === 0) throw new Error("Invalid interrupted run gate description");
+	const interruption = state.current.interruption;
+	if (!interruption || interruption.status !== "pending") throw new Error("Invalid run interruption");
+	if (typeof interruption.description !== "string" || interruption.description.length === 0) throw new Error("Invalid run interruption description");
+}
+
+function runInterruption(state: PalantirRunState): PalantirRunInterruption | undefined {
+	if (state.status !== "interrupted" || !state.current?.interruption) return undefined;
+	return {
+		workflowId: state.current.workflowId,
+		params: state.current.params,
+		description: state.current.interruption.description ?? "",
+		fields: state.current.interruption.fields,
+	};
 }

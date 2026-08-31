@@ -11,11 +11,6 @@ export type PalantirWorkflowAnyGate = {
 	readonly fields?: readonly string[];
 };
 
-export type PalantirWorkflowResolvedGate = {
-	readonly description: string;
-	readonly fields?: readonly string[];
-};
-
 export type PalantirWorkflowDeclaration<
 	Id extends string = string,
 	ConfigSchema extends z.ZodType | undefined = z.ZodType | undefined,
@@ -305,6 +300,13 @@ export type PalantirFailedRunResult = {
 	readonly metadata: PalantirRunOutcomeMetadata & { readonly summary: string };
 };
 
+export type PalantirRunInterruption = {
+	readonly workflowId: string;
+	readonly params: unknown;
+	readonly description: string;
+	readonly fields?: readonly string[];
+};
+
 export type PalantirInterruptedRunResult = {
 	readonly status: "interrupted";
 	readonly id: string;
@@ -312,8 +314,7 @@ export type PalantirInterruptedRunResult = {
 	readonly workspace: string;
 	readonly cwd: string;
 	readonly workflowId: string;
-	readonly params: unknown;
-	readonly gate: PalantirWorkflowResolvedGate;
+	readonly interruption: PalantirRunInterruption;
 };
 
 export type PalantirRunResult = PalantirStartedRunResult | PalantirCompletedRunResult | PalantirFailedRunResult | PalantirInterruptedRunResult;
@@ -330,6 +331,7 @@ export type PalantirRunInfo = {
 	readonly currentWorkflowId?: string;
 	readonly status: PalantirRunStatus;
 	readonly health: PalantirRunHealth;
+	readonly interruption?: PalantirRunInterruption;
 	readonly startedAt: string;
 	readonly updatedAt: string;
 };

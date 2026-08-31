@@ -90,10 +90,6 @@ async function runCommand(args: readonly string[]): Promise<void> {
 		writeJson({ metrics: await readRunMetrics(runRoot) });
 		return;
 	}
-	if (command === "runs" && subcommand === "gate" && rest[0]) {
-		await inspectRunGate(rest[0]);
-		return;
-	}
 	if (command === "runs" && subcommand === "logs" && rest[0]) {
 		await writeRunLogs(rest[0], { follow: rest.includes("--follow") });
 		return;
@@ -147,7 +143,7 @@ async function resumeRun(run: string, args: readonly string[]): Promise<void> {
 	const params = parseJsonOption(args, "--params");
 	await writeRunResumeRequest(runRoot, { version: 1, type: "resume", id: runInfo.id, params, createdAt: new Date().toISOString() });
 	startDetachedExecuteRun(runInfo.id);
-	writeJson({ run: { ...runInfo, status: "running", health: "healthy", updatedAt: new Date().toISOString() } });
+	writeJson({ run: { ...runInfo, status: "running", health: "healthy", interruption: undefined, updatedAt: new Date().toISOString() } });
 }
 
 async function waitRun(run: string): Promise<void> {
@@ -159,7 +155,7 @@ async function waitForInactiveRun(run: string): Promise<PalantirRunInfo> {
 	while (true) {
 		runRoot ??= await resolveWaitableRunRoot(process.cwd(), run);
 		try {
-			const runInfo = await getRunInfo(runRoot);
+			const runInfo = await readRunInspection(runRoot);
 			if (runInfo.status !== "running" || runInfo.health === "unhealthy") return runInfo;
 		} catch (error) {
 			if (!isNodeError(error) || error.code !== "ENOENT") throw error;
@@ -224,16 +220,11 @@ async function rollbackRun(run: string, args: readonly string[]): Promise<void> 
 }
 
 async function inspectRun(run: string): Promise<PalantirRunInfo> {
-	const runRoot = await resolveRunRoot(process.cwd(), run);
-	return getRunInfo(runRoot);
+	return readRunInspection(await resolveRunRoot(process.cwd(), run));
 }
 
-async function inspectRunGate(run: string): Promise<void> {
-	const runRoot = await resolveRunRoot(process.cwd(), run);
-	const project = await loadPalantirProject(process.cwd());
-	const engine = new PalantirEngine({ cwd: process.cwd(), gateMode: "pause" });
-	for (const plugin of project.plugins) engine.registerPlugin(plugin);
-	writeJson({ launch: await engine.getActiveGate(runRoot) });
+async function readRunInspection(runRoot: string): Promise<PalantirRunInfo> {
+	return getRunInfo(runRoot);
 }
 
 async function signalRun(run: string, signal: NodeJS.Signals): Promise<void> {

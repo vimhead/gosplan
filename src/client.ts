@@ -5,7 +5,6 @@ import type {
 	DeletedPalantirRunInfo,
 	PalantirRegisteredWorkflowInfo,
 	PalantirInspectedWorkflowInfo,
-	PalantirInterruptedRunResult,
 	PalantirRunCheckpoint,
 	PalantirRunInfo,
 	PalantirRunMetrics,
@@ -38,7 +37,6 @@ export type PalantirClient = {
 		inspect(run: string): Promise<PalantirRunInfo>;
 		checkpoints(run: string): Promise<PalantirRunCheckpoint[]>;
 		metrics(run: string): Promise<PalantirRunMetrics>;
-		gate(run: string): Promise<PalantirInterruptedRunResult>;
 		rollback(run: string, checkpointId: string): Promise<PalantirRunInfo>;
 		stop(run: string): Promise<PalantirRunInfo>;
 		kill(run: string): Promise<PalantirRunInfo>;
@@ -68,7 +66,6 @@ export function createPalantirClient(input: PalantirClientInput = {}): PalantirC
 			inspect: async (run) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "inspect", run])).run,
 			checkpoints: async (run) => (await processRunner.readJson<{ checkpoints: PalantirRunCheckpoint[] }>(["runs", "checkpoints", run])).checkpoints,
 			metrics: async (run) => (await processRunner.readJson<{ metrics: PalantirRunMetrics }>(["runs", "metrics", run])).metrics,
-			gate: async (run) => (await processRunner.readJson<{ launch: PalantirInterruptedRunResult }>(["runs", "gate", run])).launch,
 			rollback: async (run, checkpointId) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "rollback", run, checkpointId])).run,
 			stop: async (run) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "stop", run])).run,
 			kill: async (run) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "kill", run])).run,

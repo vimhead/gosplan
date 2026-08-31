@@ -188,7 +188,7 @@ palantir runs resume quiet-river-lantern --params '{"decision":"accept"}'
 ```
 
 `workflows list` returns entrypoint workflows by default; pass `--all` to include internal workflow steps. `workflows inspect <id>` returns params, config, gate, and plugin source info. `start` and `resume` start detached execution and return immediately with run JSON.
-Use `runs wait` to block until a run is no longer active. Use the stable id, generated name, or run path for later commands. `runs metrics` reports run totals plus per-workflow, per-agent, and per-command timing, token usage, and cost. Delete is allowed only after a run is no longer running.
+Use `runs wait` to block until a run is no longer active; it returns the same run shape as `runs inspect`. Interrupted runs include `run.interruption` with the paused workflow id, editable params, description, and fields. Use the stable id, generated name, or run path for later commands. `runs metrics` reports run totals plus per-workflow, per-agent, and per-command timing, token usage, and cost. Delete is allowed only after a run is no longer running.
 
 ## TypeScript client
 

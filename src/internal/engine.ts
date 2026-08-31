@@ -64,7 +64,7 @@ type WorkflowStep = {
 	readonly configOverride?: unknown;
 	readonly cwd: string;
 	readonly env: Record<string, string>;
-	readonly gate?: NonNullable<PalantirRunState["current"]>["gate"];
+	readonly interruption?: NonNullable<PalantirRunState["current"]>["interruption"];
 };
 
 export class PalantirEngine {
@@ -128,17 +128,6 @@ export class PalantirEngine {
 		return (await PalantirRunStore.open(runRoot)).listCheckpoints();
 	}
 
-	async getActiveGate(path: string): Promise<PalantirInterruptedRunResult> {
-		const runRoot = await resolveRunRoot(this.input.cwd, path);
-		const state = (await PalantirRunStateStore.load(runRoot)).currentState();
-		if (state.status !== "interrupted") throw new Error(`Run is not interrupted: ${runRoot}`);
-		const current = state.current;
-		if (!current) throw new Error(`Run is not resumable: ${runRoot}`);
-		const workflow = this.registry.workflowById(current.workflowId);
-		if (!workflow) throw new Error(`Unknown workflow for interrupted run: ${current.workflowId}`);
-		return interruptedLaunchResult({ id: state.id, name: state.name, workspace: state.workspace, cwd: current.cwd }, workflow, current.params, current.gate?.description);
-	}
-
 	async rollbackRun(path: string, checkpointId: string): Promise<PalantirRunInfo> {
 		const runRoot = await resolveRunRoot(this.input.cwd, path);
 		const lease = await PalantirRunLease.acquire(runRoot);
@@ -191,10 +180,11 @@ export class PalantirEngine {
 				if (shouldPauseForGate(currentStep)) {
 					const parsedParams = currentStep.workflow.params.parse(currentStep.params);
 					const description = await this.registry.describeGate(currentStep.workflow, stepRuntime, parsedParams, currentStep.configOverride);
-					await session.state.interruptCurrent(parsedParams, description);
+					const interruption = { description, fields: currentStep.workflow.gate?.fields };
+					await session.state.interruptCurrent(parsedParams, interruption);
 					await recordRunEvent(session, { type: "run.interrupted", workflowId: currentStep.workflow.id });
 					await commitRunBoundary(session, `run interrupted: ${currentStep.workflow.id}`);
-					return interruptedLaunchResult({ id: stepRuntime.id, name: session.state.currentState().name, workspace: stepRuntime.workspace, cwd: stepRuntime.cwd }, currentStep.workflow, parsedParams, description);
+					return interruptedLaunchResult({ id: stepRuntime.id, name: session.state.currentState().name, workspace: stepRuntime.workspace, cwd: stepRuntime.cwd }, currentStep.workflow, parsedParams, interruption);
 				}
 				await session.state.startStep(toRunStateStep(currentStep));
 				const stepResult = await this.executeWorkflowStep(session, currentStep, stepRuntime);
@@ -260,7 +250,7 @@ export class PalantirEngine {
 			configOverride: next.configOverride,
 			cwd: next.cwd ?? run.cwd,
 			env: next.env ?? {},
-			gate: this.input.gateMode === "pause" && workflow.gate ? { status: "pending" } : undefined,
+			interruption: this.input.gateMode === "pause" && workflow.gate ? { status: "pending" } : undefined,
 		};
 	}
 
@@ -421,7 +411,7 @@ function toWorkflowStep(workflow: PalantirAnyWorkflowDeclaration, step: NonNulla
 		configOverride: step.configOverride,
 		cwd: step.cwd,
 		env: step.env,
-		gate: step.gate,
+		interruption: step.interruption,
 	};
 }
 
@@ -432,12 +422,12 @@ function toRunStateStep(step: WorkflowStep): NonNullable<PalantirRunState["curre
 		configOverride: step.configOverride,
 		cwd: step.cwd,
 		env: step.env,
-		gate: step.gate,
+		interruption: step.interruption,
 	};
 }
 
 function shouldPauseForGate(step: WorkflowStep): boolean {
-	return step.gate?.status === "pending" && step.workflow.gate !== undefined;
+	return step.interruption?.status === "pending" && step.workflow.gate !== undefined;
 }
 
 function throwIfRunAborted(activeRun: ActiveRun): void {
@@ -447,9 +437,9 @@ function throwIfRunAborted(activeRun: ActiveRun): void {
 	throw new Error(typeof reason === "string" && reason.length > 0 ? reason : "Run aborted");
 }
 
-function interruptedLaunchResult(run: RunIdentity, workflow: PalantirAnyWorkflowDeclaration, params: unknown, description: string | undefined): PalantirInterruptedRunResult {
+function interruptedLaunchResult(run: RunIdentity, workflow: PalantirAnyWorkflowDeclaration, params: unknown, interruption: { readonly description?: string; readonly fields?: readonly string[] }): PalantirInterruptedRunResult {
 	if (!workflow.gate) throw new Error(`Workflow is not gated: ${workflow.id}`);
-	if (!description) throw new Error(`Interrupted workflow is missing gate description: ${workflow.id}`);
+	if (!interruption.description) throw new Error(`Interrupted workflow is missing description: ${workflow.id}`);
 	return {
 		status: "interrupted",
 		id: run.id,
@@ -457,8 +447,7 @@ function interruptedLaunchResult(run: RunIdentity, workflow: PalantirAnyWorkflow
 		workspace: run.workspace,
 		cwd: run.cwd,
 		workflowId: workflow.id,
-		params,
-		gate: { description, fields: workflow.gate.fields },
+		interruption: { workflowId: workflow.id, params, description: interruption.description, fields: interruption.fields },
 	};
 }
 
