@@ -49,6 +49,27 @@ explicit includes:
 Included configs can declare their own `plugins` and `includes`. `*` matches one
 directory segment; Palantir does not perform blind downward scanning.
 
+## Seer mode config
+
+Projects can declare a Seer mode write boundary in their nearest `palantir.json`.
+Palantir resolves each writable root relative to that config file and rejects roots
+that escape the project root.
+
+```json
+{
+  "includes": ["./packages/workflows/palantir.json"],
+  "seerMode": {
+    "writableRoots": ["./workflow-sources"]
+  }
+}
+```
+
+Inspect the resolved config with:
+
+```bash
+palantir seer inspect
+```
+
 ## Define workflows
 
 Workflow files export plain objects. The manifest key becomes the default fully

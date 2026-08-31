@@ -7,11 +7,16 @@ import { isWorkflowPlugin, type PalantirWorkflowPlugin } from "./api.ts";
 import { isNodeError } from "./internal/errors.ts";
 import { PalantirMemoryWorkflowState } from "./internal/state-store.ts";
 import { PalantirWorkflowRegistry, type PalantirRegisteredWorkflow } from "./internal/workflow-registry.ts";
+import { resolveSeerModeConfig, type PalantirResolvedSeerModeConfig } from "./seer/index.ts";
 
 const PALANTIR_CONFIG_FILE_NAME = "palantir.json";
+const seerModeConfigSchema = z.object({
+	writableRoots: z.array(z.string().min(1)).min(1),
+});
 const palantirConfigSchema = z.object({
 	plugins: z.array(z.string().min(1)).default([]),
 	includes: z.array(z.string().min(1)).default([]),
+	seerMode: seerModeConfigSchema.optional(),
 });
 
 type PalantirConfig = z.output<typeof palantirConfigSchema>;
@@ -28,6 +33,7 @@ export type PalantirProject = {
 	readonly configRoot: string;
 	readonly config: PalantirConfig;
 	readonly configFiles: readonly PalantirConfigFile[];
+	readonly seerMode?: PalantirResolvedSeerModeConfig;
 };
 
 export type PalantirLoadedProject = PalantirProject & {
@@ -65,6 +71,7 @@ export async function findPalantirProject(cwd: string): Promise<PalantirProject>
 		configRoot: rootConfig.root,
 		config: rootConfig.config,
 		configFiles,
+		seerMode: resolveSeerModeConfig({ configPath: rootConfig.path, configRoot: rootConfig.root, seerMode: rootConfig.config.seerMode }),
 	};
 }
 

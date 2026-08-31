@@ -12,6 +12,7 @@ import type {
 } from "./api.ts";
 import { loadPalantirProject } from "./plugin-loader.ts";
 import type { PalantirRegisteredWorkflow } from "./internal/workflow-registry.ts";
+import type { PalantirResolvedSeerModeConfig } from "./seer/index.ts";
 
 export type PalantirClientInput = {
 	readonly spawnCwd?: string;
@@ -24,6 +25,9 @@ export type PalantirClient = {
 		entries(): Promise<readonly PalantirRegisteredWorkflow[]>;
 	};
 	readonly state: PalantirWorkflowStateReader;
+	readonly seer: {
+		inspect(): Promise<PalantirResolvedSeerModeConfig | null>;
+	};
 	readonly runs: {
 		start(input: { readonly workflowId: string; readonly params: unknown; readonly configOverride?: unknown }): Promise<PalantirRunInfo>;
 		resume(input: { readonly run: string; readonly params?: unknown }): Promise<PalantirRunInfo>;
@@ -49,6 +53,9 @@ export function createPalantirClient(input: PalantirClientInput = {}): PalantirC
 			entries: async () => (await catalog.load()).workflows,
 		},
 		state: catalog.state,
+		seer: {
+			inspect: async () => (await processRunner.readJson<{ seerMode: PalantirResolvedSeerModeConfig | null }>(["seer", "inspect"])).seerMode,
+		},
 		runs: {
 			start: async (startInput) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "start", startInput.workflowId, "--params", JSON.stringify(startInput.params), ...configArgs(startInput.configOverride)])).run,
 			resume: async (resumeInput) => (await processRunner.readJson<{ run: PalantirRunInfo }>(["runs", "resume", resumeInput.run, ...paramsArgs(resumeInput.params)])).run,

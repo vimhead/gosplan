@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { loadPalantirProject } from "./plugin-loader.ts";
+import { findPalantirProject, loadPalantirProject } from "./plugin-loader.ts";
 import { type PalantirAnyWorkflowDeclaration, type DeletedPalantirRunInfo, type PalantirRunInfo } from "./api.ts";
 import { PalantirEngine } from "./internal/engine.ts";
 import { errorMessage, isNodeError } from "./internal/errors.ts";
@@ -29,6 +29,10 @@ async function runCommand(args: readonly string[]): Promise<void> {
 	const [command, subcommand, ...rest] = args;
 	if (command === "workflows" && subcommand === "list") {
 		await listWorkflows();
+		return;
+	}
+	if (command === "seer" && subcommand === "inspect") {
+		await inspectSeerMode();
 		return;
 	}
 	if (command === "execute-run" && subcommand) {
@@ -91,6 +95,11 @@ async function runCommand(args: readonly string[]): Promise<void> {
 async function listWorkflows(): Promise<void> {
 	const project = await loadPalantirProject(process.cwd());
 	writeJson({ workflows: project.registry.list() });
+}
+
+async function inspectSeerMode(): Promise<void> {
+	const project = await findPalantirProject(process.cwd());
+	writeJson({ seerMode: project.seerMode ?? null });
 }
 
 async function startRun(workflowId: string, args: readonly string[]): Promise<void> {
