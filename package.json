@@ -12,14 +12,16 @@
   ],
   "files": [
     "bin",
-    "src"
+    "src",
+    "examples"
   ],
   "exports": {
     ".": "./src/index.ts",
     "./api": "./src/api.ts",
     "./client": "./src/client.ts",
     "./schema": "./src/schema.ts",
-    "./seer": "./src/seer/index.ts"
+    "./seer": "./src/seer/index.ts",
+    "./examples/worktree-development-loop": "./examples/worktree-development-loop/plugin.ts"
   },
   "bin": {
     "palantir": "./bin/palantir.mjs"

@@ -53,6 +53,17 @@ explicit includes:
 Included configs can declare their own `plugins` and `includes`. `*` matches one
 directory segment; Palantir does not perform blind downward scanning.
 
+## Examples
+
+The repository includes runnable examples under `examples/`, including
+`examples/worktree-development-loop`.
+
+```bash
+cd examples/worktree-development-loop
+palantir project inspect
+palantir workflows inspect worktreeDevelopmentLoop.developmentLoop
+```
+
 ## Seer mode config
 
 Projects can declare a Seer mode write boundary in their nearest `palantir.json`.

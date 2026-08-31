@@ -1,0 +1,8 @@
+{
+  "plugins": ["./plugin.ts"],
+  "config": {
+    "worktreeDevelopmentLoop": {
+      "repositoryRoot": "."
+    }
+  }
+}
