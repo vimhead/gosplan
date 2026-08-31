@@ -1,6 +1,6 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
-import type { PalantirAnyWorkflowDeclaration, PalantirWorkflowCallOptions, PalantirRunOutcomeMetadata, PalantirWorkflowParamsInput, PalantirRun } from "../api.ts";
+import type { PalantirAnyWorkflowDeclaration, PalantirRunOutcomeMetadata, PalantirWorkflowParamsInput, PalantirRun } from "../api.ts";
 import type { PalantirAgentResponseCollector } from "./agent-response-tool.ts";
 import type { PalantirArtifacts } from "./artifacts.ts";
 import { PalantirAgentRunner } from "./agents.ts";
@@ -93,19 +93,13 @@ export class PalantirRunContext implements PalantirRun {
 	next<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		params: PalantirWorkflowParamsInput<TWorkflow>,
-		options?: PalantirWorkflowCallOptions,
 	): ReturnType<PalantirRun["next"]>;
-	next(workflowId: string, params: unknown, options?: { readonly configOverride?: unknown }): ReturnType<PalantirRun["next"]>;
-	next(
-		workflow: PalantirAnyWorkflowDeclaration | string,
-		params: unknown,
-		options?: { readonly configOverride?: unknown },
-	): ReturnType<PalantirRun["next"]> {
+	next(workflowId: string, params: unknown): ReturnType<PalantirRun["next"]>;
+	next(workflow: PalantirAnyWorkflowDeclaration | string, params: unknown): ReturnType<PalantirRun["next"]> {
 		return {
 			type: "next",
 			workflowId: typeof workflow === "string" ? workflow : workflow.id,
 			params,
-			configOverride: options?.configOverride,
 			cwd: this.cwd,
 			env: this.input.env,
 		};

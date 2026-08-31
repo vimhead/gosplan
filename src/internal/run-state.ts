@@ -13,7 +13,6 @@ const RUN_STATE_VERSION = 1;
 type PalantirRunWorkflowStep = {
 	readonly workflowId: string;
 	readonly params: unknown;
-	readonly configOverride?: unknown;
 	readonly cwd: string;
 	readonly env: Record<string, string>;
 	readonly interruption?: RuntimeInterruption;
@@ -51,6 +50,7 @@ export type PalantirRunState = {
 	readonly name: string;
 	readonly entrypointWorkflowId: string;
 	readonly workspace: string;
+	readonly configOverride?: unknown;
 	readonly status: PalantirRunStatus;
 	readonly current: PalantirRunWorkflowStep | null;
 	readonly lastCompleted: PalantirRunWorkflowCompletion | null;
@@ -65,6 +65,7 @@ type CreatePalantirRunStateInput = {
 	readonly name: string;
 	readonly entrypointWorkflowId: string;
 	readonly workspace: string;
+	readonly configOverride?: unknown;
 	readonly current: PalantirRunWorkflowStep;
 	readonly startedAt: string;
 };
@@ -85,6 +86,7 @@ export class PalantirRunStateStore {
 			name: input.name,
 			entrypointWorkflowId: input.entrypointWorkflowId,
 			workspace: input.workspace,
+			configOverride: input.configOverride,
 			status: "running",
 			current: input.current,
 			lastCompleted: null,

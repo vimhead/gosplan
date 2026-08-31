@@ -61,7 +61,6 @@ type ActiveRun = {
 type WorkflowStep = {
 	readonly workflow: PalantirAnyWorkflowDeclaration;
 	readonly params: unknown;
-	readonly configOverride?: unknown;
 	readonly cwd: string;
 	readonly env: Record<string, string>;
 	readonly interruption?: NonNullable<PalantirRunState["current"]>["interruption"];
@@ -117,7 +116,6 @@ export class PalantirEngine {
 		return this.runScheduler(session, {
 			workflow,
 			params,
-			configOverride: options?.configOverride,
 			cwd: session.run.cwd,
 			env: options?.env ?? {},
 		});
@@ -179,7 +177,7 @@ export class PalantirEngine {
 				const stepRuntime = session.run.with({ cwd: currentStep.cwd, env: currentStep.env });
 				if (shouldPauseForGate(currentStep)) {
 					const parsedParams = currentStep.workflow.params.parse(currentStep.params);
-					const description = await this.registry.describeGate(currentStep.workflow, stepRuntime, parsedParams, currentStep.configOverride);
+					const description = await this.registry.describeGate(currentStep.workflow, stepRuntime, parsedParams, session.state.currentState().configOverride);
 					const interruption = { description, fields: currentStep.workflow.gate?.fields };
 					await session.state.interruptCurrent(parsedParams, interruption);
 					await recordRunEvent(session, { type: "run.interrupted", workflowId: currentStep.workflow.id });
@@ -226,7 +224,7 @@ export class PalantirEngine {
 		try {
 			await assertWorkspaceBoundary(session, run.workspace);
 			await recordRunEvent(session, { type: "workflow.started", workflowId: step.workflow.id });
-			const result = await this.registry.execute(step.workflow, run, step.params, step.configOverride);
+			const result = await this.registry.execute(step.workflow, run, step.params, session.state.currentState().configOverride);
 			await assertWorkspaceBoundary(session, run.workspace);
 			const durationMs = Date.now() - startedAtMs;
 			if (result.type === "complete") await recordRunEvent(session, { type: "workflow.completed", workflowId: result.workflow.id, durationMs, metadata: result.metadata });
@@ -247,7 +245,6 @@ export class PalantirEngine {
 		return {
 			workflow,
 			params: next.params,
-			configOverride: next.configOverride,
 			cwd: next.cwd ?? run.cwd,
 			env: next.env ?? {},
 			interruption: this.input.gateMode === "pause" && workflow.gate ? { status: "pending" } : undefined,
@@ -287,7 +284,8 @@ export class PalantirEngine {
 				name,
 				entrypointWorkflowId: workflow.id,
 				workspace,
-				current: { workflowId: workflow.id, params, configOverride: options?.configOverride, cwd, env: options?.env ?? {} },
+				configOverride: options?.configOverride,
+				current: { workflowId: workflow.id, params, cwd, env: options?.env ?? {} },
 				startedAt,
 			});
 			const session = { runRoot, run, state, lease, runStore, logger, activeRun };
@@ -408,7 +406,6 @@ function toWorkflowStep(workflow: PalantirAnyWorkflowDeclaration, step: NonNulla
 	return {
 		workflow,
 		params: step.params,
-		configOverride: step.configOverride,
 		cwd: step.cwd,
 		env: step.env,
 		interruption: step.interruption,
@@ -419,7 +416,6 @@ function toRunStateStep(step: WorkflowStep): NonNullable<PalantirRunState["curre
 	return {
 		workflowId: step.workflow.id,
 		params: step.params,
-		configOverride: step.configOverride,
 		cwd: step.cwd,
 		env: step.env,
 		interruption: step.interruption,

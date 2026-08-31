@@ -189,13 +189,8 @@ export type PalantirRunNext = {
 	readonly type: "next";
 	readonly workflowId: string;
 	readonly params: unknown;
-	readonly configOverride?: unknown;
 	readonly cwd?: string;
 	readonly env?: Record<string, string>;
-};
-
-export type PalantirWorkflowCallOptions = {
-	readonly configOverride?: unknown;
 };
 
 export type PalantirRunOutcomeMetadata = {
@@ -543,9 +538,8 @@ export type PalantirRun = {
 	next<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		params: PalantirWorkflowParamsInput<TWorkflow>,
-		options?: PalantirWorkflowCallOptions,
 	): PalantirRunNext;
-	next(workflowId: string, params: unknown, options?: { readonly configOverride?: unknown }): PalantirRunNext;
+	next(workflowId: string, params: unknown): PalantirRunNext;
 	complete(metadata?: PalantirRunOutcomeMetadata): PalantirRunComplete;
 	fail(metadata: PalantirRunOutcomeMetadata & { readonly summary: string }): PalantirRunFail;
 	state: PalantirWorkflowState;
