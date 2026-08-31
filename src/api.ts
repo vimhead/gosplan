@@ -602,23 +602,7 @@ export type PalantirWorkflowPluginInfo = {
 	readonly configPath?: string;
 };
 
-export type PalantirWorkflowUiInfo = {
-	readonly label?: string;
-	readonly description?: string;
-	readonly input?: PalantirWorkflowUiInputKind;
-};
-
-export type PalantirWorkflowSchemaInfo = {
-	readonly type?: string;
-	readonly required: boolean;
-	readonly nullable: boolean;
-	readonly default?: unknown;
-	readonly input?: PalantirWorkflowUiInputKind;
-	readonly values?: readonly string[];
-	readonly element?: PalantirWorkflowSchemaInfo;
-	readonly fields?: Record<string, PalantirWorkflowSchemaInfo>;
-	readonly ui?: PalantirWorkflowUiInfo;
-};
+export type PalantirJsonSchema = Record<string, unknown>;
 
 export type PalantirWorkflowGateInfo = {
 	readonly enabled: true;
@@ -634,8 +618,7 @@ export type PalantirRegisteredWorkflowInfo = {
 };
 
 export type PalantirInspectedWorkflowInfo = PalantirRegisteredWorkflowInfo & {
-	readonly params: PalantirWorkflowSchemaInfo;
-	readonly config: PalantirWorkflowSchemaInfo | null;
+	readonly paramsSchema: PalantirJsonSchema;
 	readonly gate: PalantirWorkflowGateInfo | null;
 };
 
