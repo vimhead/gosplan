@@ -439,11 +439,58 @@ export type AgentSessionEvents = {
 	on(name: string, handler: (data: unknown) => void): WorkflowDispose;
 };
 
+export type WorkflowUsageCost = {
+	readonly input: number;
+	readonly output: number;
+	readonly cacheRead: number;
+	readonly cacheWrite: number;
+	readonly total: number;
+};
+
+export type WorkflowUsage = {
+	readonly input: number;
+	readonly output: number;
+	readonly cacheRead: number;
+	readonly cacheWrite: number;
+	readonly reasoning?: number;
+	readonly totalTokens: number;
+	readonly cost: WorkflowUsageCost;
+};
+
+export type WorkflowStageMetrics = {
+	readonly index: number;
+	readonly workflowId: string;
+	readonly status: "running" | "completed" | "failed" | "transitioned";
+	readonly startedAt: string;
+	readonly endedAt?: string;
+	readonly wallMs: number;
+	readonly agentMs: number;
+	readonly commandMs: number;
+	readonly codeMs: number;
+	readonly usage: WorkflowUsage;
+};
+
+export type WorkflowRunMetrics = {
+	readonly status: WorkflowRunStatus;
+	readonly startedAt: string;
+	readonly endedAt?: string;
+	readonly wallMs: number;
+	readonly activeMs: number;
+	readonly gateWaitMs: number;
+	readonly workflowMs: number;
+	readonly agentMs: number;
+	readonly commandMs: number;
+	readonly codeMs: number;
+	readonly usage: WorkflowUsage;
+	readonly stages: readonly WorkflowStageMetrics[];
+};
+
 export type AgentRunRawAttempt = {
 	readonly attempt: number;
 	readonly text: string;
 	readonly messages: unknown[];
 	readonly responseToolCalled: boolean;
+	readonly usage: WorkflowUsage;
 	readonly toolResponse?: unknown;
 	readonly sessionFile?: string;
 	readonly error?: string;
@@ -453,10 +500,12 @@ export type AgentRunResult<ResponseSchema extends z.ZodType> = {
 	readonly label: string;
 	readonly cwd: string;
 	readonly response: z.output<ResponseSchema>;
+	readonly usage: WorkflowUsage;
 	readonly raw: {
 		readonly text: string;
 		readonly messages: unknown[];
 		readonly responseToolCalled: boolean;
+		readonly usage: WorkflowUsage;
 		readonly toolResponse?: unknown;
 		readonly sessionFile?: string;
 		readonly attempts: readonly AgentRunRawAttempt[];

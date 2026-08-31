@@ -232,19 +232,21 @@ export class PalantirRuntime {
 	private async executeWorkflowStep(session: WorkflowRuntimeSession, step: WorkflowStep, runtime: WorkflowRuntime): Promise<WorkflowStepResult> {
 		const boundaryRef = await session.runStore.currentSnapshotRef();
 		const logBoundary = session.logger.boundary();
+		const startedAtMs = Date.now();
 		try {
 			await assertWorkspaceBoundary(session, runtime.workspace);
 			await recordRuntimeEvent(session, { type: "workflow.started", workflowId: step.workflow.id });
 			const result = await this.registry.execute(step.workflow, runtime, step.params, step.configOverride);
 			await assertWorkspaceBoundary(session, runtime.workspace);
-			if (result.type === "complete") await recordRuntimeEvent(session, { type: "workflow.completed", workflowId: result.workflow.id, metadata: result.metadata });
-			else if (result.type === "fail") await recordRuntimeEvent(session, { type: "workflow.failed", workflowId: result.workflow.id, metadata: result.metadata });
-			else await recordRuntimeEvent(session, { type: "workflow.transitioned", fromWorkflowId: step.workflow.id, toWorkflowId: result.workflowId });
+			const durationMs = Date.now() - startedAtMs;
+			if (result.type === "complete") await recordRuntimeEvent(session, { type: "workflow.completed", workflowId: result.workflow.id, durationMs, metadata: result.metadata });
+			else if (result.type === "fail") await recordRuntimeEvent(session, { type: "workflow.failed", workflowId: result.workflow.id, durationMs, metadata: result.metadata });
+			else await recordRuntimeEvent(session, { type: "workflow.transitioned", fromWorkflowId: step.workflow.id, toWorkflowId: result.workflowId, durationMs });
 			return result;
 		} catch (error) {
 			await rollbackRuntimeBoundary(session, boundaryRef);
 			rollbackRuntimeLogBoundary(session, logBoundary);
-			await recordRuntimeEvent(session, { type: "workflow.failed", workflowId: step.workflow.id, error: errorMessage(error) });
+			await recordRuntimeEvent(session, { type: "workflow.failed", workflowId: step.workflow.id, durationMs: Date.now() - startedAtMs, error: errorMessage(error) });
 			throw error;
 		}
 	}

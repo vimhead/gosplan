@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { WriteStream } from "node:fs";
 import type { CommandRunInput, CommandRunResult, WorkflowLogRef } from "../api.ts";
 import { errorMessage } from "./errors.ts";
@@ -21,6 +21,7 @@ export class WorkflowCommandRunner {
 
 	async run(commandInput: CommandRunInput): Promise<CommandRunResult> {
 		const cwd = this.resolveFromCwd(commandInput.cwd ?? this.input.cwd);
+		const startedAtMs = Date.now();
 		await this.input.logger.record({ type: "command.started", label: commandInput.label, command: commandInput.command, cwd });
 		let result: SpawnCommandResult;
 		const stdoutLog = await this.input.logs.createWriteStream(commandLog(commandInput.label, "stdout"));
@@ -36,7 +37,7 @@ export class WorkflowCommandRunner {
 				stderrStream: stderrLog.stream,
 			});
 		} catch (error) {
-			await this.input.logger.record({ type: "command.failed", label: commandInput.label, error: errorMessage(error) });
+			await this.input.logger.record({ type: "command.failed", label: commandInput.label, durationMs: Date.now() - startedAtMs, error: errorMessage(error) });
 			throw error;
 		}
 		const commandResult = {
@@ -53,6 +54,7 @@ export class WorkflowCommandRunner {
 		await this.input.logger.record({
 			type: "command.completed",
 			label: commandInput.label,
+			durationMs: Date.now() - startedAtMs,
 			exitCode: result.exitCode,
 			killed: result.killed,
 			stdoutLogId: commandResult.stdoutLog.id,

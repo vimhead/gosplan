@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import type { AgentPromptInput, AgentRunInput, AgentRunRawAttempt, AgentRunResult, AgentSessionEvents, AgentSpawnInput, WorkflowAgentSession } from "../api.ts";
+import type { AgentPromptInput, AgentRunInput, AgentRunRawAttempt, AgentRunResult, AgentSessionEvents, AgentSpawnInput, WorkflowAgentSession, WorkflowUsage } from "../api.ts";
 import {
 	AGENT_RESPONSE_TOOL_NAME,
 	AgentResponseCollector,
@@ -22,6 +22,7 @@ import { errorMessage } from "./errors.ts";
 import type { WorkflowRunLogs } from "./logs.ts";
 import { safeFileName } from "./file-names.ts";
 import type { WorkflowRunLogger } from "./run-log.ts";
+import { emptyWorkflowUsage, totalWorkflowUsage, workflowUsageFromValue } from "./usage.ts";
 
 const DEFAULT_AGENT_ATTEMPTS = 3;
 const DEFAULT_AGENT_TOOL_ALLOWLIST = ["read", "bash", "edit", "write", AGENT_RESPONSE_TOOL_NAME] as const;
@@ -118,44 +119,65 @@ class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
 		if (this.isDisposed) throw new Error(`Workflow agent session is disposed: ${this.label}`);
 		const maxAttempts = Math.max(1, Math.floor(agentInput.maxAttempts ?? DEFAULT_AGENT_ATTEMPTS));
 		const attempts: AgentRunRawAttempt[] = [];
+		const startedAtMs = Date.now();
+		let isTerminalEventRecorded = false;
 		await this.input.logger.record({ type: "agent.started", label: this.label, cwd: this.cwd, maxAttempts });
 
-		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-			await this.input.logger.record({ type: "agent.attempt.started", label: this.label, attempt });
-			const raw = await this.runAttempt(agentInput, attempt, attempts.at(-1)?.error);
-			const rawAttempt: AgentRunRawAttempt = { attempt, ...raw };
-			attempts.push(rawAttempt);
+		try {
+			for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+				await this.input.logger.record({ type: "agent.attempt.started", label: this.label, attempt });
+				const raw = await this.runAttempt(agentInput, attempt, attempts.at(-1)?.error);
+				const rawAttempt: AgentRunRawAttempt = { attempt, ...raw };
+				attempts.push(rawAttempt);
 
-			try {
-				if (!raw.responseToolCalled) throw new Error(`Agent did not call ${AGENT_RESPONSE_TOOL_NAME}`);
-				const response = agentInput.response.parse(raw.toolResponse);
-				const result: AgentRunResult<ResponseSchema> = {
-					label: this.label,
-					cwd: this.cwd,
-					response,
-					raw: { ...raw, attempts },
-				};
-				await this.input.logs.write(`agents/${safeFileName(this.label)}.json`, JSON.stringify(result, null, 2));
-				await this.input.logger.record({ type: "agent.completed", label: this.label, attempts: attempt });
-				return result;
-			} catch (error) {
-				const message = errorMessage(error);
-				attempts[attempts.length - 1] = { ...rawAttempt, error: message };
-				await this.input.logs.write(
-					`agents/${safeFileName(this.label)}.attempt-${attempt}.raw.json`,
-					JSON.stringify({ label: this.label, cwd: this.cwd, raw: attempts.at(-1) }, null, 2),
-				);
-				await this.input.logger.record({ type: "agent.attempt.failed", label: this.label, attempt, error: message });
-				if (attempt === maxAttempts) {
-					await this.input.logger.record({ type: "agent.failed", label: this.label, attempts: attempt, error: message });
-					throw new Error(
-						`Agent ${this.label} did not return a valid structured response after ${attempt} attempt(s). Raw output saved to logs/agents/${safeFileName(this.label)}.attempt-${attempt}.raw.json: ${message}`,
+				try {
+					if (!raw.responseToolCalled) throw new Error(`Agent did not call ${AGENT_RESPONSE_TOOL_NAME}`);
+					const response = agentInput.response.parse(raw.toolResponse);
+					const usage = totalWorkflowUsage(attempts.map((candidate) => candidate.usage));
+					const result: AgentRunResult<ResponseSchema> = {
+						label: this.label,
+						cwd: this.cwd,
+						response,
+						usage,
+						raw: { ...raw, usage, attempts },
+					};
+					await this.input.logs.write(`agents/${safeFileName(this.label)}.json`, JSON.stringify(result, null, 2));
+					isTerminalEventRecorded = true;
+					await this.input.logger.record({ type: "agent.completed", label: this.label, attempts: attempt, durationMs: Date.now() - startedAtMs, usage });
+					return result;
+				} catch (error) {
+					const message = errorMessage(error);
+					attempts[attempts.length - 1] = { ...rawAttempt, error: message };
+					await this.input.logs.write(
+						`agents/${safeFileName(this.label)}.attempt-${attempt}.raw.json`,
+						JSON.stringify({ label: this.label, cwd: this.cwd, raw: attempts.at(-1) }, null, 2),
 					);
+					await this.input.logger.record({ type: "agent.attempt.failed", label: this.label, attempt, error: message });
+					if (attempt === maxAttempts) {
+						const usage = totalWorkflowUsage(attempts.map((candidate) => candidate.usage));
+						isTerminalEventRecorded = true;
+						await this.input.logger.record({ type: "agent.failed", label: this.label, attempts: attempt, durationMs: Date.now() - startedAtMs, usage, error: message });
+						throw new Error(
+							`Agent ${this.label} did not return a valid structured response after ${attempt} attempt(s). Raw output saved to logs/agents/${safeFileName(this.label)}.attempt-${attempt}.raw.json: ${message}`,
+						);
+					}
 				}
 			}
-		}
 
-		throw new Error(`Agent ${this.label} did not run`);
+			throw new Error(`Agent ${this.label} did not run`);
+		} catch (error) {
+			if (!isTerminalEventRecorded) {
+				await this.input.logger.record({
+					type: "agent.failed",
+					label: this.label,
+					attempts: attempts.length,
+					durationMs: Date.now() - startedAtMs,
+					usage: totalWorkflowUsage(attempts.map((candidate) => candidate.usage)),
+					error: errorMessage(error),
+				});
+			}
+			throw error;
+		}
 	}
 
 	async dispose(): Promise<void> {
@@ -203,10 +225,20 @@ class SpawnedWorkflowAgentSession implements WorkflowAgentSession {
 			text: text.trim(),
 			messages,
 			responseToolCalled: capturedResponse.called,
+			usage: usageFromMessages(messages),
 			toolResponse: capturedResponse.response,
 			sessionFile: this.input.session.sessionFile,
 		};
 	}
+}
+
+function usageFromMessages(messages: readonly unknown[]): WorkflowUsage {
+	return totalWorkflowUsage(messages.map(usageFromMessage).filter((usage): usage is WorkflowUsage => usage !== undefined));
+}
+
+function usageFromMessage(message: unknown): WorkflowUsage | undefined {
+	if (!message || typeof message !== "object" || !("usage" in message)) return undefined;
+	return workflowUsageFromValue((message as { usage?: unknown }).usage) ?? emptyWorkflowUsage();
 }
 
 function withResponseToolInstruction(
