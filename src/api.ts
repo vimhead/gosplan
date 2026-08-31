@@ -322,6 +322,20 @@ export type PalantirRunResult = PalantirStartedRunResult | PalantirCompletedRunR
 export type PalantirRunStatus = "running" | "interrupted" | "completed" | "failed";
 export type PalantirRunHealth = "healthy" | "unhealthy";
 
+export type PalantirRunOutcomeInfo = {
+	readonly workflowId: string;
+	readonly completedAt: string;
+	readonly status: "completed" | "failed";
+	readonly metadata?: PalantirRunOutcomeMetadata;
+};
+
+export type PalantirRunFailureInfo = {
+	readonly workflowId: string;
+	readonly error: string;
+	readonly metadata?: PalantirRunOutcomeMetadata;
+	readonly failedAt: string;
+};
+
 export type PalantirRunInfo = {
 	readonly version: number;
 	readonly id: string;
@@ -332,6 +346,8 @@ export type PalantirRunInfo = {
 	readonly status: PalantirRunStatus;
 	readonly health: PalantirRunHealth;
 	readonly interruption?: PalantirRunInterruption;
+	readonly outcome?: PalantirRunOutcomeInfo;
+	readonly failed?: PalantirRunFailureInfo;
 	readonly startedAt: string;
 	readonly updatedAt: string;
 };
