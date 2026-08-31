@@ -93,7 +93,7 @@ export class PalantirRunContext implements PalantirRun {
 	next<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		params: PalantirWorkflowParamsInput<TWorkflow>,
-		options?: PalantirWorkflowCallOptions<TWorkflow>,
+		options?: PalantirWorkflowCallOptions,
 	): ReturnType<PalantirRun["next"]>;
 	next(workflowId: string, params: unknown, options?: { readonly configOverride?: unknown }): ReturnType<PalantirRun["next"]>;
 	next(

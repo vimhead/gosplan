@@ -4,7 +4,7 @@ import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { findPalantirProject, loadPalantirProject } from "./plugin-loader.ts";
-import { type PalantirAnyWorkflowDeclaration, type DeletedPalantirRunInfo, type PalantirRunInfo } from "./api.ts";
+import { type PalantirAnyWorkflowDeclaration, type DeletedPalantirRunInfo, type PalantirProjectInfo, type PalantirRunInfo } from "./api.ts";
 import { PalantirEngine } from "./internal/engine.ts";
 import { errorMessage, isNodeError } from "./internal/errors.ts";
 import { readRunLaunchRequest, readRunResumeRequest, writeRunLaunchRequest, writeRunResumeRequest } from "./internal/launch-request.ts";
@@ -34,6 +34,10 @@ async function runCommand(args: readonly string[]): Promise<void> {
 	}
 	if (command === "workflows" && subcommand === "inspect" && rest[0]) {
 		await inspectWorkflow(rest[0]);
+		return;
+	}
+	if (command === "project" && subcommand === "inspect") {
+		await inspectProject();
 		return;
 	}
 	if (command === "seer" && subcommand === "inspect") {
@@ -116,6 +120,22 @@ function workflowListEntrypointsOnly(args: readonly string[]): boolean {
 	return !all;
 }
 
+async function inspectProject(): Promise<void> {
+	const project = await loadPalantirProject(process.cwd());
+	writeJson({ project: projectInfo(project) });
+}
+
+function projectInfo(project: Awaited<ReturnType<typeof loadPalantirProject>>): PalantirProjectInfo {
+	return {
+		cwd: project.cwd,
+		configPath: project.configPath,
+		configRoot: project.configRoot,
+		configFiles: project.configFiles.map((configFile) => configFile.path),
+		plugins: project.pluginInfos,
+		seerMode: project.seerMode ?? null,
+	};
+}
+
 async function inspectSeerMode(): Promise<void> {
 	const project = await findPalantirProject(process.cwd());
 	writeJson({ seerMode: project.seerMode ?? null });
@@ -193,7 +213,7 @@ async function executeRun(runId: string): Promise<void> {
 	process.once("SIGINT", () => abortController.abort(new Error("Interrupted")));
 	const runRoot = resolve(process.cwd(), RUNS_ROOT, runId);
 	const project = await loadPalantirProject(process.cwd());
-	const engine = new PalantirEngine({ cwd: process.cwd(), signal: abortController.signal, gateMode: "pause" });
+	const engine = new PalantirEngine({ cwd: process.cwd(), signal: abortController.signal, gateMode: "pause", config: project.projectConfig });
 	for (const plugin of project.plugins) engine.registerPlugin(plugin);
 	const launchRequest = await readOptionalRunLaunchRequest(runRoot);
 	if (launchRequest) {

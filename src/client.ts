@@ -5,6 +5,7 @@ import type {
 	DeletedPalantirRunInfo,
 	PalantirRegisteredWorkflowInfo,
 	PalantirInspectedWorkflowInfo,
+	PalantirProjectInfo,
 	PalantirRunCheckpoint,
 	PalantirRunInfo,
 	PalantirRunMetrics,
@@ -20,6 +21,9 @@ export type PalantirClientInput = {
 };
 
 export type PalantirClient = {
+	readonly project: {
+		inspect(): Promise<PalantirProjectInfo>;
+	};
 	readonly workflows: {
 		list(options?: { readonly all?: boolean }): Promise<PalantirRegisteredWorkflowInfo[]>;
 		inspect(workflowId: string): Promise<PalantirInspectedWorkflowInfo>;
@@ -49,6 +53,9 @@ export function createPalantirClient(input: PalantirClientInput = {}): PalantirC
 	const processRunner = new PalantirProcessRunner(input);
 	const catalog = new PalantirWorkflowCatalog(input.spawnCwd ?? process.cwd());
 	const client: PalantirClient = {
+		project: {
+			inspect: async () => (await processRunner.readJson<{ project: PalantirProjectInfo }>(["project", "inspect"])).project,
+		},
 		workflows: {
 			list: async (options) => (await processRunner.readJson<{ workflows: PalantirRegisteredWorkflowInfo[] }>(["workflows", "list", ...(options?.all ? ["--all"] : [])])).workflows,
 			inspect: async (workflowId) => (await processRunner.readJson<{ workflow: PalantirInspectedWorkflowInfo }>(["workflows", "inspect", workflowId])).workflow,

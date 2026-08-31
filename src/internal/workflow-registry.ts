@@ -1,10 +1,11 @@
 import { z } from "zod";
-import { isWorkflowComplete, isWorkflowFail, isWorkflowNext, type PalantirAnyWorkflowDeclaration, type PalantirInspectedWorkflowInfo, type PalantirJsonSchema, type PalantirRegisteredWorkflowInfo, type PalantirRunComplete, type PalantirWorkflowConfig, type PalantirDispose, type PalantirRunFail, type PalantirWorkflowGateInfo, type PalantirWorkflowImplementation, type PalantirRunNext, type PalantirWorkflowParams, type PalantirRun, type PalantirWorkflowPluginInfo } from "../api.ts";
+import { isWorkflowComplete, isWorkflowFail, isWorkflowNext, type PalantirAnyWorkflowDeclaration, type PalantirInspectedWorkflowInfo, type PalantirJsonSchema, type PalantirRegisteredWorkflowInfo, type PalantirRunComplete, type PalantirDispose, type PalantirRunFail, type PalantirWorkflowGateInfo, type PalantirWorkflowImplementation, type PalantirRunNext, type PalantirWorkflowParams, type PalantirRun, type PalantirWorkflowPluginInfo } from "../api.ts";
 import { assertLaunchableWorkflow, isPlainObject, schemaShape, schemaType, unwrapSchema } from "../schema.ts";
 
 export type PalantirRegisteredWorkflow = {
 	workflow: PalantirAnyWorkflowDeclaration;
-	implementation: PalantirWorkflowImplementation<PalantirAnyWorkflowDeclaration>;
+	implementation: PalantirWorkflowImplementation<PalantirAnyWorkflowDeclaration, unknown>;
+	configSchema?: z.ZodType;
 	config: unknown;
 	plugin?: PalantirWorkflowPluginInfo;
 };
@@ -19,18 +20,16 @@ export class PalantirWorkflowRegistry {
 
 	register<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
-		implementation: PalantirWorkflowImplementation<TWorkflow>,
-		metadata: { readonly plugin?: PalantirWorkflowPluginInfo } = {},
+		implementation: PalantirWorkflowImplementation<TWorkflow, unknown>,
+		metadata: { readonly plugin?: PalantirWorkflowPluginInfo; readonly configSchema?: z.ZodType; readonly config?: unknown } = {},
 	): PalantirDispose {
 		if (this.entries.has(workflow.id)) throw new Error(`Workflow already registered: ${workflow.id}`);
-		if (!workflow.config && implementation.config !== undefined) {
-			throw new Error(`Workflow config provided without config schema: ${workflow.id}`);
-		}
 
 		const entry: PalantirRegisteredWorkflow = {
 			workflow,
-			implementation: implementation as PalantirWorkflowImplementation<PalantirAnyWorkflowDeclaration>,
-			config: workflow.config ? workflow.config.parse(defaultConfigInput(workflow, implementation.config)) : undefined,
+			implementation: implementation as PalantirWorkflowImplementation<PalantirAnyWorkflowDeclaration, unknown>,
+			configSchema: metadata.configSchema,
+			config: metadata.configSchema ? metadata.configSchema.parse(defaultConfigInput(metadata.configSchema, metadata.config)) : undefined,
 			plugin: metadata.plugin,
 		};
 		assertLaunchableWorkflow(workflow);
@@ -70,8 +69,8 @@ export class PalantirWorkflowRegistry {
 		if (!entry) throw new Error(`Unknown workflow: ${workflow.id}`);
 		if (!workflow.gate) throw new Error(`Workflow is not gated: ${workflow.id}`);
 		const parsedParams = workflow.params.parse(params) as PalantirWorkflowParams<TWorkflow>;
-		const parsedConfig = parseExecutionConfig(workflow, entry.config, configOverride);
-		const description = await (entry.implementation as PalantirWorkflowImplementation<TWorkflow>).gate?.describe(run, parsedParams, parsedConfig);
+		const parsedConfig = parseExecutionConfig(entry, configOverride);
+		const description = await (entry.implementation as PalantirWorkflowImplementation<TWorkflow, unknown>).gate?.describe(run, parsedParams, parsedConfig);
 		return validateGateDescription(description ?? defaultGateDescription(workflow), workflow.id);
 	}
 
@@ -84,9 +83,9 @@ export class PalantirWorkflowRegistry {
 		const entry = this.entries.get(workflow.id);
 		if (!entry) throw new Error(`Unknown workflow: ${workflow.id}`);
 
-		const parsedParams = workflow.params.parse(params) as Parameters<PalantirWorkflowImplementation<TWorkflow>["execute"]>[1];
-		const parsedConfig = parseExecutionConfig(workflow, entry.config, configOverride);
-		const result = await (entry.implementation as PalantirWorkflowImplementation<TWorkflow>).execute(run, parsedParams, parsedConfig);
+		const parsedParams = workflow.params.parse(params) as Parameters<PalantirWorkflowImplementation<TWorkflow, unknown>["execute"]>[1];
+		const parsedConfig = parseExecutionConfig(entry, configOverride);
+		const result = await (entry.implementation as PalantirWorkflowImplementation<TWorkflow, unknown>).execute(run, parsedParams, parsedConfig);
 		if (isWorkflowNext(result)) return result;
 		if (isWorkflowComplete(result)) return { type: "complete", workflow, metadata: result.metadata };
 		if (isWorkflowFail(result)) return { type: "fail", workflow, metadata: result.metadata };
@@ -100,22 +99,29 @@ export class PalantirWorkflowRegistry {
 	}
 }
 
-function defaultConfigInput(workflow: PalantirAnyWorkflowDeclaration, config: unknown): unknown {
+function defaultConfigInput(configSchema: z.ZodType, config: unknown): unknown {
 	if (config !== undefined) return config;
-	return schemaType(unwrapSchema(workflow.config)) === "object" ? {} : undefined;
+	return schemaType(unwrapSchema(configSchema)) === "object" ? {} : undefined;
 }
 
-function parseExecutionConfig<TWorkflow extends PalantirAnyWorkflowDeclaration>(
-	workflow: TWorkflow,
-	registeredConfig: unknown,
-	configOverride: unknown,
-): PalantirWorkflowConfig<TWorkflow> {
-	if (!workflow.config) return undefined as PalantirWorkflowConfig<TWorkflow>;
-	if (configOverride === undefined) return registeredConfig as PalantirWorkflowConfig<TWorkflow>;
-	const rawConfig = isPlainObject(registeredConfig) && isPlainObject(configOverride)
-		? deepMerge(registeredConfig, configOverride)
-		: configOverride;
-	return workflow.config.parse(rawConfig) as PalantirWorkflowConfig<TWorkflow>;
+function parseExecutionConfig(entry: PalantirRegisteredWorkflow, configOverride: unknown): unknown {
+	const pluginConfigOverride = pluginConfigOverrideInput(entry, configOverride);
+	if (!entry.configSchema) {
+		if (pluginConfigOverride !== undefined) throw new Error(`Run config override provided for plugin without config schema: ${entry.plugin?.id ?? entry.workflow.id}`);
+		return undefined;
+	}
+	if (pluginConfigOverride === undefined) return entry.config;
+	const rawConfig = isPlainObject(entry.config) && isPlainObject(pluginConfigOverride)
+		? deepMerge(entry.config, pluginConfigOverride)
+		: pluginConfigOverride;
+	return entry.configSchema.parse(rawConfig);
+}
+
+function pluginConfigOverrideInput(entry: PalantirRegisteredWorkflow, configOverride: unknown): unknown {
+	if (configOverride === undefined) return undefined;
+	if (!isPlainObject(configOverride)) throw new Error("Run config override must be an object keyed by plugin id");
+	const pluginId = entry.plugin?.id;
+	return pluginId ? configOverride[pluginId] : undefined;
 }
 
 function deepMerge(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {

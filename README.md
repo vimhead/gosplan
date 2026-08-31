@@ -30,12 +30,16 @@ Create `palantir.json` in the project:
 
 ```json
 {
-  "plugins": ["./palantir/plugin.ts"]
+  "plugins": ["./palantir/plugin.ts"],
+  "config": {
+    "example": {}
+  }
 }
 ```
 
-Plugin paths are resolved relative to `palantir.json`. Each plugin module must
-default-export the plugin.
+Plugin paths are resolved relative to `palantir.json`. Project config is keyed by
+plugin id and validated against each plugin manifest config schema. Each plugin
+module must default-export the plugin.
 
 For multiple plugin packages, keep package-local configs and aggregate them with
 explicit includes:
@@ -103,10 +107,12 @@ State leaves can be raw Zod schemas. State ids are derived from the tree path.
 
 ```ts
 import { definePluginManifest, workflowArtifactRefSchema } from "palantir";
+import { z } from "zod";
 import { planWorkflow } from "./workflows/plan.ts";
 
 export const manifest = definePluginManifest({
   id: "example",
+  config: z.object({ repositoryRoot: z.string() }),
   workflows: {
     plan: planWorkflow,
   },
@@ -130,8 +136,8 @@ import { manifest } from "./manifest.ts";
 export default definePlugin(manifest, {
   workflows: {
     plan: {
-      async execute(run, params) {
-        const ref = await run.artifacts.write("plan.md", params.task);
+      async execute(run, params, config) {
+        const ref = await run.with({ cwd: config.repositoryRoot }).artifacts.write("plan.md", params.task);
         await run.state.set(manifest.states.planning.planArtifact, ref);
         return run.complete({
           summary: "Plan created.",
@@ -166,6 +172,8 @@ use it as a table of contents for artifacts, logs, and state.
 The CLI is JSON-native.
 
 ```bash
+palantir project inspect
+
 palantir workflows list
 
 palantir workflows list --all
@@ -189,7 +197,7 @@ palantir runs delete quiet-river-lantern
 echo '{"params":{"decision":"accept"}}' | palantir runs resume quiet-river-lantern
 ```
 
-`workflows list` returns entrypoint workflows by default; pass `--all` to include internal workflow steps. `workflows inspect <id>` returns params JSON Schema, gate, and plugin source info. `start` reads `{"params":{...},"config":{...}}` from stdin and `resume` reads `{"params":{...}}` from stdin; no-params workflows can omit stdin. `start` and `resume` start detached execution and return immediately with run JSON.
+`project inspect` returns resolved config files, plugin config schemas, plugin config values, and Seer mode. `workflows list` returns entrypoint workflows by default; pass `--all` to include internal workflow steps. `workflows inspect <id>` returns params JSON Schema, gate, and plugin source info. `start` reads `{"params":{...},"config":{"pluginId":{...}}}` from stdin and `resume` reads `{"params":{...}}` from stdin; no-params workflows can omit stdin. `start` and `resume` start detached execution and return immediately with run JSON.
 Use `runs wait` to block until a run is no longer active; it returns the same run shape as `runs inspect`. Interrupted runs include `run.interruption` with the paused workflow id, editable params, description, and fields. Completed or failed runs include `run.outcome`; failed runs also include `run.failed`. Use the stable id, generated name, or run path for later commands. `runs metrics` reports run totals plus per-workflow, per-agent, and per-command timing, token usage, and cost. Delete is allowed only after a run is no longer running.
 
 ## TypeScript client

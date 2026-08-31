@@ -1,5 +1,6 @@
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
+import type { PalantirResolvedSeerModeConfig } from "./seer/config.ts";
 
 const WORKFLOW_DECLARATION_KIND = "palantir.workflow";
 
@@ -13,7 +14,6 @@ export type PalantirWorkflowAnyGate = {
 
 export type PalantirWorkflowDeclaration<
 	Id extends string = string,
-	ConfigSchema extends z.ZodType | undefined = z.ZodType | undefined,
 	ParamsSchema extends z.ZodType = z.ZodType,
 > = {
 	readonly kind: typeof WORKFLOW_DECLARATION_KIND;
@@ -21,47 +21,14 @@ export type PalantirWorkflowDeclaration<
 	readonly title?: string;
 	readonly isEntrypoint: boolean;
 	readonly description?: string;
-	readonly config?: ConfigSchema;
 	readonly params: ParamsSchema;
 	readonly gate?: PalantirWorkflowAnyGate;
-	readonly ui?: PalantirWorkflowUi;
 };
 
-export type PalantirAnyWorkflowDeclaration = PalantirWorkflowDeclaration<string, z.ZodType | undefined, z.ZodType>;
-
-export type PalantirWorkflowConfigInput<TWorkflow extends PalantirAnyWorkflowDeclaration> = NonNullable<TWorkflow["config"]> extends z.ZodType
-	? z.input<NonNullable<TWorkflow["config"]>>
-	: undefined;
-
-export type PalantirWorkflowConfig<TWorkflow extends PalantirAnyWorkflowDeclaration> = NonNullable<TWorkflow["config"]> extends z.ZodType
-	? z.output<NonNullable<TWorkflow["config"]>>
-	: undefined;
+export type PalantirAnyWorkflowDeclaration = PalantirWorkflowDeclaration<string, z.ZodType>;
 
 export type PalantirWorkflowParamsInput<TWorkflow extends PalantirAnyWorkflowDeclaration> = z.input<TWorkflow["params"]>;
 export type PalantirWorkflowParams<TWorkflow extends PalantirAnyWorkflowDeclaration> = z.output<TWorkflow["params"]>;
-export type PalantirWorkflowConfigOverride<TWorkflow extends PalantirAnyWorkflowDeclaration> = NonNullable<TWorkflow["config"]> extends z.ZodType
-	? Partial<z.input<NonNullable<TWorkflow["config"]>>>
-	: never;
-
-export type PalantirWorkflowUiScalarInputKind = "input" | "textarea" | "number" | "boolean";
-export type PalantirWorkflowUiInputKind = PalantirWorkflowUiScalarInputKind | "select" | "multiSelect";
-
-export type PalantirWorkflowStringListStateDefinition = PalantirWorkflowStateDefinition<string[]> | PalantirWorkflowStateDefinition<readonly string[]>;
-
-type PalantirWorkflowUiFieldBase = {
-	readonly label?: string;
-	readonly description?: string;
-};
-
-export type PalantirWorkflowUiField =
-	| (PalantirWorkflowUiFieldBase & { readonly input?: PalantirWorkflowUiScalarInputKind; readonly options?: never })
-	| (PalantirWorkflowUiFieldBase & { readonly input: "select"; readonly options?: PalantirWorkflowStringListStateDefinition })
-	| (PalantirWorkflowUiFieldBase & { readonly input: "multiSelect"; readonly options: PalantirWorkflowStringListStateDefinition });
-
-export type PalantirWorkflowUi = {
-	readonly params?: Record<string, PalantirWorkflowUiField>;
-	readonly config?: Record<string, PalantirWorkflowUiField>;
-};
 
 export type PalantirWorkflowGate<ParamsSchema extends z.ZodType> = unknown extends z.input<ParamsSchema>
 	? PalantirWorkflowAnyGate
@@ -77,17 +44,14 @@ export type PalantirWorkflowGate<ParamsSchema extends z.ZodType> = unknown exten
 
 export type PalantirWorkflowDefinition<
 	Id extends string | undefined = string | undefined,
-	ConfigSchema extends z.ZodType | undefined = z.ZodType | undefined,
 	ParamsSchema extends z.ZodType = z.ZodType,
 > = {
 	readonly id?: Id;
 	readonly title?: string;
 	readonly isEntrypoint: boolean;
 	readonly description?: string;
-	readonly config?: ConfigSchema;
 	readonly params: ParamsSchema;
 	readonly gate?: PalantirWorkflowGate<ParamsSchema>;
-	readonly ui?: PalantirWorkflowUi;
 };
 
 export type PalantirAnyWorkflowDefinition = {
@@ -95,10 +59,8 @@ export type PalantirAnyWorkflowDefinition = {
 	readonly title?: string;
 	readonly isEntrypoint: boolean;
 	readonly description?: string;
-	readonly config?: z.ZodType;
 	readonly params: z.ZodType;
 	readonly gate?: PalantirWorkflowAnyGate;
-	readonly ui?: PalantirWorkflowUi;
 };
 
 export type PalantirWorkflowStateDefinition<T = unknown, Id extends string = string> = {
@@ -139,13 +101,9 @@ export type PalantirQualifiedPluginWorkflow<
 	PluginId extends string,
 	WorkflowKey extends string,
 	TWorkflow extends PalantirAnyWorkflowDefinition,
-> = TWorkflow extends {
-	readonly config?: infer ConfigSchema extends z.ZodType | undefined;
-	readonly params: infer ParamsSchema extends z.ZodType;
-}
+> = TWorkflow extends { readonly params: infer ParamsSchema extends z.ZodType }
 	? PalantirWorkflowDeclaration<
 		TWorkflow extends { readonly id: infer ExplicitId extends string } ? ExplicitId : `${PluginId}.${WorkflowKey}`,
-		ConfigSchema,
 		ParamsSchema
 	>
 	: never;
@@ -169,34 +127,48 @@ export type PalantirQualifiedPluginStates<PluginId extends string, States, Path 
 
 export type PalantirWorkflowPluginManifest<
 	PluginId extends string = string,
+	ConfigSchema extends z.ZodType | undefined = z.ZodType | undefined,
 	Workflows extends Record<string, PalantirAnyWorkflowDeclaration> = Record<string, PalantirAnyWorkflowDeclaration>,
 	States = undefined,
 > = {
 	readonly id: PluginId;
+	readonly config?: ConfigSchema;
 	readonly workflows: Workflows;
 	readonly states: States;
 };
 
-export type PalantirAnyWorkflowPluginManifest = PalantirWorkflowPluginManifest<string, Record<string, PalantirAnyWorkflowDeclaration>, unknown>;
+export type PalantirAnyWorkflowPluginManifest = PalantirWorkflowPluginManifest<string, z.ZodType | undefined, Record<string, PalantirAnyWorkflowDeclaration>, unknown>;
+
+export type PalantirWorkflowPluginConfigSchema<TManifest extends PalantirAnyWorkflowPluginManifest> = TManifest extends { readonly config?: infer ConfigSchema extends z.ZodType | undefined }
+	? ConfigSchema
+	: undefined;
+
+export type PalantirWorkflowPluginConfig<TManifest extends PalantirAnyWorkflowPluginManifest> = NonNullable<PalantirWorkflowPluginConfigSchema<TManifest>> extends z.ZodType
+	? z.output<NonNullable<PalantirWorkflowPluginConfigSchema<TManifest>>>
+	: undefined;
 
 export type PalantirDefinePluginManifestInput<
 	PluginId extends string,
+	ConfigSchema extends z.ZodType | undefined,
 	Workflows extends PalantirWorkflowPluginWorkflows,
 	States extends PalantirWorkflowPluginStateTree | undefined,
 > = {
 	readonly id: PluginId;
+	readonly config?: ConfigSchema;
 	readonly workflows: Workflows & PalantirValidatedWorkflowGates<Workflows>;
 	readonly states?: States;
 };
 
 export function definePluginManifest<
 	const PluginId extends string,
-	const Workflows extends PalantirWorkflowPluginWorkflows,
+	const ConfigSchema extends z.ZodType | undefined = undefined,
+	const Workflows extends PalantirWorkflowPluginWorkflows = PalantirWorkflowPluginWorkflows,
 	const States extends PalantirWorkflowPluginStateTree | undefined = undefined,
 >(
-	input: PalantirDefinePluginManifestInput<PluginId, Workflows, States>,
+	input: PalantirDefinePluginManifestInput<PluginId, ConfigSchema, Workflows, States>,
 ): PalantirWorkflowPluginManifest<
 	PluginId,
+	ConfigSchema,
 	PalantirQualifiedPluginWorkflows<PluginId, Workflows>,
 	States extends PalantirWorkflowPluginStateTree ? PalantirQualifiedPluginStates<PluginId, States> : undefined
 > {
@@ -207,6 +179,7 @@ export function definePluginManifest<
 	) as PalantirQualifiedPluginWorkflows<PluginId, Workflows>;
 	return {
 		id: input.id,
+		config: input.config,
 		workflows,
 		states: qualifyStateTree(input.id, input.states, [], declaredIds) as States extends PalantirWorkflowPluginStateTree ? PalantirQualifiedPluginStates<PluginId, States> : undefined,
 	};
@@ -219,6 +192,10 @@ export type PalantirRunNext = {
 	readonly configOverride?: unknown;
 	readonly cwd?: string;
 	readonly env?: Record<string, string>;
+};
+
+export type PalantirWorkflowCallOptions = {
+	readonly configOverride?: unknown;
 };
 
 export type PalantirRunOutcomeMetadata = {
@@ -240,36 +217,28 @@ export type PalantirRunFail = {
 
 export type PalantirWorkflowExecutionResult = PalantirRunNext | PalantirRunComplete | PalantirRunFail;
 
-export type PalantirWorkflowGateImplementation<TWorkflow extends PalantirAnyWorkflowDeclaration> = {
+export type PalantirWorkflowGateImplementation<TWorkflow extends PalantirAnyWorkflowDeclaration, TConfig> = {
 	describe(
 		run: PalantirRun,
 		params: PalantirWorkflowParams<TWorkflow>,
-		config: PalantirWorkflowConfig<TWorkflow>,
+		config: TConfig,
 	): MaybePromise<string>;
 };
 
-export type PalantirWorkflowImplementation<TWorkflow extends PalantirAnyWorkflowDeclaration> = {
-	readonly config?: PalantirWorkflowConfigInput<TWorkflow>;
-	readonly gate?: PalantirWorkflowGateImplementation<TWorkflow>;
+export type PalantirWorkflowImplementation<TWorkflow extends PalantirAnyWorkflowDeclaration, TConfig = unknown> = {
+	readonly gate?: PalantirWorkflowGateImplementation<TWorkflow, TConfig>;
 	execute(
 		run: PalantirRun,
 		params: PalantirWorkflowParams<TWorkflow>,
-		config: PalantirWorkflowConfig<TWorkflow>,
+		config: TConfig,
 	): MaybePromise<PalantirWorkflowExecutionResult>;
 };
 
-export type PalantirWorkflowCallOptions<TWorkflow extends PalantirAnyWorkflowDeclaration> = {
-	readonly configOverride?: PalantirWorkflowConfigOverride<TWorkflow>;
-};
-
-export type PalantirRunStartOptions<TWorkflow extends PalantirAnyWorkflowDeclaration = PalantirAnyWorkflowDeclaration> = PalantirWorkflowCallOptions<TWorkflow> & {
+export type PalantirRunStartOptions = {
 	readonly id?: string;
 	readonly name?: string;
 	readonly cwd?: string;
 	readonly env?: Record<string, string>;
-};
-
-export type PalantirAnyRunStartOptions = Omit<PalantirRunStartOptions<PalantirAnyWorkflowDeclaration>, "configOverride"> & {
 	readonly configOverride?: unknown;
 };
 
@@ -385,7 +354,7 @@ export type PalantirWorkflowPluginContext = {
 
 export type PalantirWorkflowPluginImplementation<TManifest extends PalantirAnyWorkflowPluginManifest> = {
 	readonly workflows: {
-		readonly [Key in keyof TManifest["workflows"]]: PalantirWorkflowImplementation<TManifest["workflows"][Key]>;
+		readonly [Key in keyof TManifest["workflows"]]: PalantirWorkflowImplementation<TManifest["workflows"][Key], PalantirWorkflowPluginConfig<TManifest>>;
 	};
 };
 
@@ -574,7 +543,7 @@ export type PalantirRun = {
 	next<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		params: PalantirWorkflowParamsInput<TWorkflow>,
-		options?: PalantirWorkflowCallOptions<TWorkflow>,
+		options?: PalantirWorkflowCallOptions,
 	): PalantirRunNext;
 	next(workflowId: string, params: unknown, options?: { readonly configOverride?: unknown }): PalantirRunNext;
 	complete(metadata?: PalantirRunOutcomeMetadata): PalantirRunComplete;
@@ -620,6 +589,20 @@ export type PalantirRegisteredWorkflowInfo = {
 export type PalantirInspectedWorkflowInfo = PalantirRegisteredWorkflowInfo & {
 	readonly paramsSchema: PalantirJsonSchema;
 	readonly gate: PalantirWorkflowGateInfo | null;
+};
+
+export type PalantirProjectPluginInfo = PalantirWorkflowPluginInfo & {
+	readonly configSchema: PalantirJsonSchema | null;
+	readonly config: unknown;
+};
+
+export type PalantirProjectInfo = {
+	readonly cwd: string;
+	readonly configPath: string;
+	readonly configRoot: string;
+	readonly configFiles: readonly string[];
+	readonly plugins: readonly PalantirProjectPluginInfo[];
+	readonly seerMode: PalantirResolvedSeerModeConfig | null;
 };
 
 function assertLocalDeclarationId(id: string, kind: "plugin" | "workflow" | "state"): void {

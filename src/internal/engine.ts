@@ -3,7 +3,6 @@ import { mkdir } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
 	type PalantirAnyWorkflowDeclaration,
-	type PalantirAnyRunStartOptions,
 	type PalantirAnyWorkflowPluginManifest,
 	type PalantirDispose,
 	type PalantirRunStartOptions,
@@ -39,6 +38,7 @@ export type PalantirEngineInput = {
 	readonly signal?: AbortSignal;
 	readonly responseCollector?: PalantirAgentResponseCollector;
 	readonly gateMode?: "auto" | "pause";
+	readonly config?: Record<string, unknown>;
 };
 
 type RunSession = {
@@ -84,7 +84,7 @@ export class PalantirEngine {
 		const disposers = Object.entries(plugin.manifest.workflows).map(([key, workflow]) => {
 			const workflowImplementation = implementation.workflows[key];
 			if (!workflowImplementation) throw new Error(`Missing implementation for workflow ${plugin.manifest.id}.${key}`);
-			return this.registry.register(workflow, workflowImplementation);
+			return this.registry.register(workflow, workflowImplementation, { plugin: { id: plugin.manifest.id }, configSchema: plugin.manifest.config, config: this.input.config?.[plugin.manifest.id] });
 		});
 		this.disposersByPlugin.set(plugin.manifest.id, disposers);
 		return () => {
@@ -111,7 +111,7 @@ export class PalantirEngine {
 	async runWorkflow<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		params: unknown,
-		options: PalantirRunStartOptions<TWorkflow> | PalantirAnyRunStartOptions | undefined,
+		options: PalantirRunStartOptions | undefined,
 	): Promise<PalantirRunResult> {
 		const session = await this.createRunSession(workflow, params, options);
 		return this.runScheduler(session, {
@@ -257,7 +257,7 @@ export class PalantirEngine {
 	private async createRunSession<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		params: unknown,
-		options: PalantirRunStartOptions<TWorkflow> | PalantirAnyRunStartOptions | undefined,
+		options: PalantirRunStartOptions | undefined,
 	): Promise<RunSession> {
 		const id = options?.id ?? randomUUID();
 		const name = options?.name ?? id;
