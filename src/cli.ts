@@ -29,7 +29,11 @@ export async function main(args: readonly string[]): Promise<void> {
 async function runCommand(args: readonly string[]): Promise<void> {
 	const [command, subcommand, ...rest] = args;
 	if (command === "workflows" && subcommand === "list") {
-		await listWorkflows();
+		await listWorkflows(rest);
+		return;
+	}
+	if (command === "workflows" && subcommand === "inspect" && rest[0]) {
+		await inspectWorkflow(rest[0]);
 		return;
 	}
 	if (command === "seer" && subcommand === "inspect") {
@@ -97,9 +101,23 @@ async function runCommand(args: readonly string[]): Promise<void> {
 	throw new Error(`Unknown palantir command: ${args.join(" ")}`);
 }
 
-async function listWorkflows(): Promise<void> {
+async function listWorkflows(args: readonly string[]): Promise<void> {
 	const project = await loadPalantirProject(process.cwd());
-	writeJson({ workflows: project.registry.list() });
+	writeJson({ workflows: project.registry.list({ entrypointsOnly: workflowListEntrypointsOnly(args) }) });
+}
+
+async function inspectWorkflow(workflowId: string): Promise<void> {
+	const project = await loadPalantirProject(process.cwd());
+	const workflow = project.registry.inspect(workflowId);
+	if (!workflow) throw new Error(`Unknown workflow: ${workflowId}`);
+	writeJson({ workflow });
+}
+
+function workflowListEntrypointsOnly(args: readonly string[]): boolean {
+	const entrypoints = args.includes("--entrypoints");
+	const all = args.includes("--all");
+	if (entrypoints && all) throw new Error("Use either --entrypoints or --all, not both");
+	return !all;
 }
 
 async function inspectSeerMode(): Promise<void> {

@@ -166,6 +166,10 @@ The CLI is JSON-native.
 ```bash
 palantir workflows list
 
+palantir workflows list --all
+
+palantir workflows inspect example.plan
+
 palantir runs start example.plan --params '{"task":"Add tests"}'
 
 palantir runs list
@@ -183,7 +187,7 @@ palantir runs delete quiet-river-lantern
 palantir runs resume quiet-river-lantern --params '{"decision":"accept"}'
 ```
 
-`start` and `resume` start detached execution and return immediately with run JSON.
+`workflows list` returns entrypoint workflows by default; pass `--all` to include internal workflow steps. `workflows inspect <id>` returns params, config, gate, and plugin source info. `start` and `resume` start detached execution and return immediately with run JSON.
 Use `runs wait` to block until a run is no longer active. Use the stable id, generated name, or run path for later commands. `runs metrics` reports run totals plus per-workflow, per-agent, and per-command timing, token usage, and cost. Delete is allowed only after a run is no longer running.
 
 ## TypeScript client

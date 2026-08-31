@@ -575,10 +575,47 @@ export type PalantirRun = {
 	};
 };
 
+export type PalantirWorkflowPluginInfo = {
+	readonly id: string;
+	readonly path?: string;
+	readonly configPath?: string;
+};
+
+export type PalantirWorkflowUiInfo = {
+	readonly label?: string;
+	readonly description?: string;
+	readonly input?: PalantirWorkflowUiInputKind;
+};
+
+export type PalantirWorkflowSchemaInfo = {
+	readonly type?: string;
+	readonly required: boolean;
+	readonly nullable: boolean;
+	readonly default?: unknown;
+	readonly input?: PalantirWorkflowUiInputKind;
+	readonly values?: readonly string[];
+	readonly element?: PalantirWorkflowSchemaInfo;
+	readonly fields?: Record<string, PalantirWorkflowSchemaInfo>;
+	readonly ui?: PalantirWorkflowUiInfo;
+};
+
+export type PalantirWorkflowGateInfo = {
+	readonly enabled: true;
+	readonly fields?: readonly string[];
+};
+
 export type PalantirRegisteredWorkflowInfo = {
-	id: string;
-	displayTitle: string | null;
-	description?: string;
+	readonly id: string;
+	readonly title: string | null;
+	readonly description?: string;
+	readonly isEntrypoint: boolean;
+	readonly plugin?: PalantirWorkflowPluginInfo;
+};
+
+export type PalantirInspectedWorkflowInfo = PalantirRegisteredWorkflowInfo & {
+	readonly params: PalantirWorkflowSchemaInfo;
+	readonly config: PalantirWorkflowSchemaInfo | null;
+	readonly gate: PalantirWorkflowGateInfo | null;
 };
 
 function assertLocalDeclarationId(id: string, kind: "plugin" | "workflow" | "state"): void {

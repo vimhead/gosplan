@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createJiti } from "jiti";
 import { z } from "zod";
-import { isWorkflowPlugin, type PalantirWorkflowPlugin } from "./api.ts";
+import { isWorkflowPlugin, type PalantirWorkflowPlugin, type PalantirWorkflowPluginInfo } from "./api.ts";
 import { isNodeError } from "./internal/errors.ts";
 import { PalantirMemoryWorkflowState } from "./internal/state-store.ts";
 import { PalantirWorkflowRegistry, type PalantirRegisteredWorkflow } from "./internal/workflow-registry.ts";
@@ -43,22 +43,27 @@ export type PalantirLoadedProject = PalantirProject & {
 	readonly state: PalantirMemoryWorkflowState;
 };
 
+type LoadedPalantirWorkflowPlugin = {
+	readonly plugin: PalantirWorkflowPlugin;
+	readonly info: PalantirWorkflowPluginInfo;
+};
+
 export async function loadPalantirProject(cwd: string): Promise<PalantirLoadedProject> {
 	const project = await findPalantirProject(cwd);
-	const plugins = await loadWorkflowPlugins(project);
+	const loadedPlugins = await loadWorkflowPlugins(project);
 	const registry = new PalantirWorkflowRegistry();
 	const state = new PalantirMemoryWorkflowState();
-	for (const plugin of plugins) {
+	for (const { plugin, info } of loadedPlugins) {
 		const implementation = typeof plugin.implementation === "function"
 			? plugin.implementation({ cwd: project.cwd, state })
 			: plugin.implementation;
 		for (const [key, workflow] of Object.entries(plugin.manifest.workflows)) {
 			const workflowImplementation = implementation.workflows[key];
 			if (!workflowImplementation) throw new Error(`Missing implementation for workflow ${plugin.manifest.id}.${key}`);
-			registry.register(workflow, workflowImplementation);
+			registry.register(workflow, workflowImplementation, { plugin: info });
 		}
 	}
-	return { ...project, plugins, registry, workflows: registry.launchableEntries(), state };
+	return { ...project, plugins: loadedPlugins.map(({ plugin }) => plugin), registry, workflows: registry.launchableEntries(), state };
 }
 
 export async function findPalantirProject(cwd: string): Promise<PalantirProject> {
@@ -107,15 +112,18 @@ async function readPalantirConfigFile(path: string): Promise<PalantirConfigFile>
 	return { path, root: dirname(path), config };
 }
 
-async function loadWorkflowPlugins(project: PalantirProject): Promise<PalantirWorkflowPlugin[]> {
-	const plugins: PalantirWorkflowPlugin[] = [];
+async function loadWorkflowPlugins(project: PalantirProject): Promise<LoadedPalantirWorkflowPlugin[]> {
+	const plugins: LoadedPalantirWorkflowPlugin[] = [];
 	for (const configFile of project.configFiles) {
 		const jiti = createJiti(pathToFileURL(configFile.path).href, { moduleCache: false });
 		for (const pluginPath of configFile.config.plugins) {
 			const resolvedPluginPath = resolveConfigPath(configFile.root, pluginPath);
 			const module = await jiti.import(pathToFileURL(resolvedPluginPath).href) as { default?: unknown };
 			if (!isWorkflowPlugin(module.default)) throw new Error(`Palantir plugin must be the default export: ${resolvedPluginPath}`);
-			plugins.push(module.default);
+			plugins.push({
+				plugin: module.default,
+				info: { id: module.default.manifest.id, path: resolvedPluginPath, configPath: configFile.path },
+			});
 		}
 	}
 	return plugins;

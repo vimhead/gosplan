@@ -1,10 +1,11 @@
-import { isWorkflowComplete, isWorkflowFail, isWorkflowNext, type PalantirAnyWorkflowDeclaration, type PalantirRegisteredWorkflowInfo, type PalantirRunComplete, type PalantirWorkflowConfig, type PalantirDispose, type PalantirRunFail, type PalantirWorkflowImplementation, type PalantirRunNext, type PalantirWorkflowParams, type PalantirRun } from "../api.ts";
-import { assertLaunchableWorkflow, isPlainObject, schemaShape, schemaType, unwrapSchema } from "../schema.ts";
+import { isWorkflowComplete, isWorkflowFail, isWorkflowNext, type PalantirAnyWorkflowDeclaration, type PalantirInspectedWorkflowInfo, type PalantirRegisteredWorkflowInfo, type PalantirRunComplete, type PalantirWorkflowConfig, type PalantirDispose, type PalantirRunFail, type PalantirWorkflowGateInfo, type PalantirWorkflowImplementation, type PalantirRunNext, type PalantirWorkflowParams, type PalantirRun, type PalantirWorkflowPluginInfo, type PalantirWorkflowSchemaInfo, type PalantirWorkflowUiField, type PalantirWorkflowUiInfo } from "../api.ts";
+import { assertLaunchableWorkflow, defaultSchemaValue, enumValues, inferInputKind, isPlainObject, schemaElement, schemaShape, schemaType, unwrapSchema } from "../schema.ts";
 
 export type PalantirRegisteredWorkflow = {
 	workflow: PalantirAnyWorkflowDeclaration;
 	implementation: PalantirWorkflowImplementation<PalantirAnyWorkflowDeclaration>;
 	config: unknown;
+	plugin?: PalantirWorkflowPluginInfo;
 };
 
 export type PalantirWorkflowStepResult =
@@ -18,6 +19,7 @@ export class PalantirWorkflowRegistry {
 	register<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		implementation: PalantirWorkflowImplementation<TWorkflow>,
+		metadata: { readonly plugin?: PalantirWorkflowPluginInfo } = {},
 	): PalantirDispose {
 		if (this.entries.has(workflow.id)) throw new Error(`Workflow already registered: ${workflow.id}`);
 		if (!workflow.config && implementation.config !== undefined) {
@@ -28,6 +30,7 @@ export class PalantirWorkflowRegistry {
 			workflow,
 			implementation: implementation as PalantirWorkflowImplementation<PalantirAnyWorkflowDeclaration>,
 			config: workflow.config ? workflow.config.parse(defaultConfigInput(workflow, implementation.config)) : undefined,
+			plugin: metadata.plugin,
 		};
 		assertLaunchableWorkflow(workflow);
 		assertGateWorkflow(workflow);
@@ -38,8 +41,14 @@ export class PalantirWorkflowRegistry {
 		};
 	}
 
-	list(): PalantirRegisteredWorkflowInfo[] {
-		return this.sortedEntries().map(({ workflow }) => workflowInfo(workflow));
+	list(options: { readonly entrypointsOnly?: boolean } = {}): PalantirRegisteredWorkflowInfo[] {
+		const entries = options.entrypointsOnly ? this.launchableEntries() : this.sortedEntries();
+		return entries.map((entry) => workflowInfo(entry));
+	}
+
+	inspect(workflowId: string): PalantirInspectedWorkflowInfo | undefined {
+		const entry = this.entries.get(workflowId);
+		return entry ? inspectedWorkflowInfo(entry) : undefined;
 	}
 
 	launchableEntries(): PalantirRegisteredWorkflow[] {
@@ -139,10 +148,94 @@ function validateGateDescription(description: string, workflowId: string): strin
 	return trimmed;
 }
 
-function workflowInfo(workflow: PalantirAnyWorkflowDeclaration): PalantirRegisteredWorkflowInfo {
+function inspectedWorkflowInfo(entry: PalantirRegisteredWorkflow): PalantirInspectedWorkflowInfo {
 	return {
-		id: workflow.id,
-		displayTitle: workflow.displayTitle,
-		description: workflow.description,
+		...workflowInfo(entry),
+		params: schemaInfo(entry.workflow.params, entry.workflow.ui?.params),
+		config: entry.workflow.config ? schemaInfo(entry.workflow.config, entry.workflow.ui?.config) : null,
+		gate: gateInfo(entry.workflow),
 	};
+}
+
+function workflowInfo(entry: PalantirRegisteredWorkflow): PalantirRegisteredWorkflowInfo {
+	return {
+		id: entry.workflow.id,
+		title: entry.workflow.displayTitle,
+		description: entry.workflow.description,
+		isEntrypoint: entry.workflow.displayTitle !== null,
+		plugin: entry.plugin,
+	};
+}
+
+function gateInfo(workflow: PalantirAnyWorkflowDeclaration): PalantirWorkflowGateInfo | null {
+	return workflow.gate ? { enabled: true, fields: workflow.gate.fields } : null;
+}
+
+function schemaInfo(schema: unknown, uiFields: Record<string, PalantirWorkflowUiField> | undefined): PalantirWorkflowSchemaInfo {
+	return schemaNodeInfo(schema, undefined, uiFields);
+}
+
+function schemaNodeInfo(schema: unknown, uiField: PalantirWorkflowUiField | undefined, childUiFields?: Record<string, PalantirWorkflowUiField>): PalantirWorkflowSchemaInfo {
+	const unwrappedSchema = unwrapSchema(schema);
+	const type = schemaType(unwrappedSchema);
+	const info: PalantirWorkflowSchemaInfo = {
+		type,
+		required: !schemaAcceptsUndefined(schema),
+		nullable: schemaAcceptsNull(schema),
+		...defaultValueInfo(schema),
+		...schemaInputInfo(schema, uiField),
+		...schemaValuesInfo(unwrappedSchema),
+		...schemaElementInfo(unwrappedSchema),
+		...schemaFieldsInfo(unwrappedSchema, childUiFields),
+		...schemaUiInfo(uiField),
+	};
+	return info;
+}
+
+function schemaInputInfo(schema: unknown, uiField: PalantirWorkflowUiField | undefined): Pick<PalantirWorkflowSchemaInfo, "input"> {
+	const input = inferInputKind(schema, uiField);
+	return input ? { input } : {};
+}
+
+function schemaValuesInfo(schema: unknown): Pick<PalantirWorkflowSchemaInfo, "values"> {
+	return schemaType(schema) === "enum" ? { values: enumValues(schema) } : {};
+}
+
+function schemaElementInfo(schema: unknown): Pick<PalantirWorkflowSchemaInfo, "element"> {
+	return schemaType(schema) === "array" ? { element: schemaNodeInfo(schemaElement(schema), undefined) } : {};
+}
+
+function schemaFieldsInfo(schema: unknown, uiFields: Record<string, PalantirWorkflowUiField> | undefined): Pick<PalantirWorkflowSchemaInfo, "fields"> {
+	if (schemaType(schema) !== "object") return {};
+	const fields = Object.fromEntries(Object.entries(schemaShape(schema)).map(([key, value]) => [key, schemaNodeInfo(value, uiFields?.[key])]));
+	return { fields };
+}
+
+function schemaUiInfo(uiField: PalantirWorkflowUiField | undefined): Pick<PalantirWorkflowSchemaInfo, "ui"> {
+	const ui = workflowUiInfo(uiField);
+	return ui ? { ui } : {};
+}
+
+function workflowUiInfo(uiField: PalantirWorkflowUiField | undefined): PalantirWorkflowUiInfo | undefined {
+	if (!uiField) return undefined;
+	return {
+		label: uiField.label,
+		description: uiField.description,
+		input: uiField.input,
+	};
+}
+
+function defaultValueInfo(schema: unknown): Pick<PalantirWorkflowSchemaInfo, "default"> {
+	const value = defaultSchemaValue(schema);
+	return value === undefined ? {} : { default: value };
+}
+
+function schemaAcceptsNull(schema: unknown): boolean {
+	const parser = schema as { safeParse?: (value: unknown) => { success: boolean } };
+	return typeof parser.safeParse === "function" ? parser.safeParse(null).success : false;
+}
+
+function schemaAcceptsUndefined(schema: unknown): boolean {
+	const parser = schema as { safeParse?: (value: unknown) => { success: boolean } };
+	return typeof parser.safeParse === "function" ? parser.safeParse(undefined).success : false;
 }

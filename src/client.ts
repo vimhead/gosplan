@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import type {
 	DeletedPalantirRunInfo,
 	PalantirRegisteredWorkflowInfo,
+	PalantirInspectedWorkflowInfo,
 	PalantirInterruptedRunResult,
 	PalantirRunCheckpoint,
 	PalantirRunInfo,
@@ -21,7 +22,8 @@ export type PalantirClientInput = {
 
 export type PalantirClient = {
 	readonly workflows: {
-		list(): Promise<PalantirRegisteredWorkflowInfo[]>;
+		list(options?: { readonly all?: boolean }): Promise<PalantirRegisteredWorkflowInfo[]>;
+		inspect(workflowId: string): Promise<PalantirInspectedWorkflowInfo>;
 		entries(): Promise<readonly PalantirRegisteredWorkflow[]>;
 	};
 	readonly state: PalantirWorkflowStateReader;
@@ -50,7 +52,8 @@ export function createPalantirClient(input: PalantirClientInput = {}): PalantirC
 	const catalog = new PalantirWorkflowCatalog(input.spawnCwd ?? process.cwd());
 	const client: PalantirClient = {
 		workflows: {
-			list: async () => (await processRunner.readJson<{ workflows: PalantirRegisteredWorkflowInfo[] }>(["workflows", "list"])).workflows,
+			list: async (options) => (await processRunner.readJson<{ workflows: PalantirRegisteredWorkflowInfo[] }>(["workflows", "list", ...(options?.all ? ["--all"] : [])])).workflows,
+			inspect: async (workflowId) => (await processRunner.readJson<{ workflow: PalantirInspectedWorkflowInfo }>(["workflows", "inspect", workflowId])).workflow,
 			entries: async () => (await catalog.load()).workflows,
 		},
 		state: catalog.state,
