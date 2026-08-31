@@ -403,10 +403,16 @@ export type PalantirCommandRunResult = {
 	readonly stderrLog: PalantirLogRef;
 };
 
+export type PalantirAgentInitialEvent = {
+	readonly name: string;
+	readonly data?: unknown;
+};
+
 export type PalantirAgentSpawnInput = {
 	readonly label: string;
 	readonly cwd?: string;
 	readonly tools?: string[];
+	readonly initialEvents?: readonly PalantirAgentInitialEvent[];
 	readonly model?: CreateAgentSessionOptions["model"];
 	readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
 };

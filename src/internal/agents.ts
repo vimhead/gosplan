@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import type { PalantirAgentPromptInput, PalantirAgentRunInput, PalantirAgentRunRawAttempt, PalantirAgentRunResult, PalantirAgentSessionEvents, PalantirAgentSpawnInput, PalantirAgentSession, PalantirAgentUsage } from "../api.ts";
+import type { PalantirAgentInitialEvent, PalantirAgentPromptInput, PalantirAgentRunInput, PalantirAgentRunRawAttempt, PalantirAgentRunResult, PalantirAgentSessionEvents, PalantirAgentSpawnInput, PalantirAgentSession, PalantirAgentUsage } from "../api.ts";
 import {
 	AGENT_RESPONSE_TOOL_NAME,
 	PalantirAgentResponseCollector,
@@ -64,6 +64,7 @@ export class PalantirAgentRunner {
 		const agentDir = this.input.agentDir ?? getAgentDir();
 		const loader = new DefaultResourceLoader({ cwd, agentDir, eventBus });
 		await loader.reload();
+		emitInitialEvents(eventBus, agentInput.initialEvents);
 		const { session } = await createAgentSession({
 			cwd,
 			resourceLoader: loader,
@@ -73,6 +74,7 @@ export class PalantirAgentRunner {
 			model: agentInput.model ?? this.input.model,
 			thinkingLevel: agentInput.thinkingLevel ?? this.input.thinkingLevel,
 		});
+		await bindExtensionsForInitialEvents(session, agentInput.initialEvents);
 
 		await this.input.logger.record({ type: "agent.spawned", label: agentInput.label, cwd });
 		return new SpawnedPalantirAgentSession({
@@ -230,6 +232,17 @@ class SpawnedPalantirAgentSession implements PalantirAgentSession {
 			sessionFile: this.input.session.sessionFile,
 		};
 	}
+}
+
+function emitInitialEvents(eventBus: PalantirAgentSessionEvents, events: readonly PalantirAgentInitialEvent[] | undefined): void {
+	for (const event of events ?? []) {
+		eventBus.emit(event.name, event.data);
+	}
+}
+
+async function bindExtensionsForInitialEvents(session: AgentSession, events: readonly PalantirAgentInitialEvent[] | undefined): Promise<void> {
+	if ((events?.length ?? 0) === 0) return;
+	await session.bindExtensions({});
 }
 
 function usageFromMessages(messages: readonly unknown[]): PalantirAgentUsage {
