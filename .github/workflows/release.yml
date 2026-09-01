@@ -1,0 +1,101 @@
+name: Release Tip
+
+on:
+  workflow_run:
+    workflows: [Test]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      TIP_TAG: tip
+      TIP_COMMIT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TIP_COMMIT }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check
+        run: npm run check
+
+      - name: Pack npm CLI tarball
+        run: |
+          npm run release:pack
+          mkdir -p dist/release
+          mv palantir-*.tgz dist/release/palantir-tip.tgz
+
+      - name: Build native binaries
+        run: |
+          set -euo pipefail
+
+          build_binary() {
+            target="$1"
+            output="$2"
+            bun build --compile --target="$target" ./src/bun/cli.ts --outfile "dist/release/$output"
+            chmod +x "dist/release/$output"
+          }
+
+          build_binary bun-linux-x64 palantir-linux-x64
+          build_binary bun-linux-arm64 palantir-linux-arm64
+          build_binary bun-darwin-x64 palantir-darwin-x64
+          build_binary bun-darwin-arm64 palantir-darwin-arm64
+          build_binary bun-windows-x64 palantir-windows-x64.exe
+
+      - name: Write checksums
+        run: |
+          cd dist/release
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Point tip tag at this commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch --tags --force
+          git tag -fa "$TIP_TAG" -m "Latest continuous release" "$TIP_COMMIT"
+          git push --force origin "refs/tags/$TIP_TAG"
+
+      - name: Write release notes
+        run: |
+          cat > dist/release-notes.md <<EOF
+          Automated tip build for \`$TIP_COMMIT\`.
+
+          This prerelease is overwritten after every successful \`Test\` run on \`main\`.
+          EOF
+
+      - name: Publish tip release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TIP_TAG" >/dev/null 2>&1; then
+            gh release edit "$TIP_TAG" --title "Palantir Tip" --notes-file dist/release-notes.md --prerelease --latest=false
+            gh release upload "$TIP_TAG" dist/release/* --clobber
+          else
+            gh release create "$TIP_TAG" dist/release/* --title "Palantir Tip" --notes-file dist/release-notes.md --prerelease --latest=false
+          fi

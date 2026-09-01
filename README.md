@@ -26,6 +26,19 @@ npm run release:pack
 The tarball includes the Pi coding-agent SDK so installed CLIs can run workflows
 that call `run.agents.*` without requiring a separate Pi package install.
 
+Build a self-contained native CLI for the current platform:
+
+```bash
+npm run release:binary
+cp dist/palantir /usr/local/bin/palantir
+palantir project inspect
+```
+
+The native binary uses Bun at build time and does not require Node at runtime.
+Every successful `Test` workflow run on `main` updates the rolling GitHub
+prerelease tagged `tip` with `palantir-tip.tgz`, platform binaries, and
+`SHA256SUMS.txt`.
+
 ## Features
 
 - Typed plugin manifests and executable plugins.

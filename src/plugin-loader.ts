@@ -1,8 +1,14 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createJiti } from "jiti";
+import { createJiti } from "jiti/static";
+import * as typeboxModule from "typebox";
 import { z } from "zod";
+import * as zodModule from "zod";
+import * as palantirApiModule from "./api.ts";
+import * as palantirModule from "./index.ts";
+import * as palantirSchemaModule from "./schema.ts";
+import * as palantirSeerModule from "./seer/index.ts";
 import { isWorkflowPlugin, type PalantirJsonSchema, type PalantirProjectPluginInfo, type PalantirWorkflowPlugin, type PalantirWorkflowPluginInfo } from "./api.ts";
 import { isNodeError } from "./internal/errors.ts";
 import { PalantirMemoryWorkflowState } from "./internal/state-store.ts";
@@ -121,7 +127,7 @@ async function loadWorkflowPlugins(project: PalantirProject): Promise<LoadedPala
 	const plugins: LoadedPalantirWorkflowPlugin[] = [];
 	const pluginIds = new Set<string>();
 	for (const configFile of project.configFiles) {
-		const jiti = createJiti(pathToFileURL(configFile.path).href, { moduleCache: false });
+		const jiti = createJiti(pathToFileURL(configFile.path).href, { moduleCache: false, virtualModules: palantirWorkflowVirtualModules() });
 		for (const pluginPath of configFile.config.plugins) {
 			const resolvedPluginPath = resolveConfigPath(configFile.root, pluginPath);
 			const module = await jiti.import(pathToFileURL(resolvedPluginPath).href) as { default?: unknown };
@@ -148,6 +154,17 @@ async function loadWorkflowPlugins(project: PalantirProject): Promise<LoadedPala
 
 function workflowPluginInfo(info: PalantirProjectPluginInfo): PalantirWorkflowPluginInfo {
 	return { id: info.id, path: info.path, configPath: info.configPath };
+}
+
+function palantirWorkflowVirtualModules(): Record<string, unknown> {
+	return {
+		palantir: palantirModule,
+		"palantir/api": palantirApiModule,
+		"palantir/schema": palantirSchemaModule,
+		"palantir/seer": palantirSeerModule,
+		typebox: typeboxModule,
+		zod: zodModule,
+	};
 }
 
 function mergeProjectConfig(configFiles: readonly PalantirConfigFile[]): Record<string, unknown> {

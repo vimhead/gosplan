@@ -49,6 +49,7 @@
   ],
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "bun": "1.4.0",
     "typescript": "^5.9.0"
   },
   "scripts": {
@@ -56,6 +57,8 @@
     "build:cli": "npm run check",
     "release:dry": "npm run build:cli && npm pack --dry-run",
     "release:pack": "npm run build:cli && npm pack",
-    "pack:dry": "npm run release:dry"
+    "pack:dry": "npm run release:dry",
+    "build:binary": "npm run check && bun build --compile ./src/bun/cli.ts --outfile dist/palantir",
+    "release:binary": "npm run build:binary"
   }
 }
