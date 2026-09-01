@@ -56,7 +56,6 @@
     "build:cli": "npm run check",
     "release:dry": "npm run build:cli && npm pack --dry-run",
     "release:pack": "npm run build:cli && npm pack",
-    "publish:npm": "npm run release:dry && npm publish --access public",
     "pack:dry": "npm run release:dry"
   }
 }
