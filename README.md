@@ -10,6 +10,30 @@ not the scheduler.
 npm install github:vimhead/palantir
 ```
 
+Install the public GitHub CLI globally:
+
+```bash
+npm install -g github:vimhead/palantir
+palantir project inspect
+```
+
+Build a downloadable npm tarball for GitHub Releases:
+
+```bash
+npm run release:pack
+```
+
+The tarball includes the Pi coding-agent SDK so installed CLIs can run workflows
+that call `run.agents.*` without requiring a separate Pi package install. Publish
+to npm with:
+
+```bash
+npm run publish:npm
+```
+
+The npm package name must be available to the publishing account before running
+that command.
+
 ## Features
 
 - Typed plugin manifests and executable plugins.
