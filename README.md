@@ -212,6 +212,14 @@ use it as a table of contents for artifacts, logs, and state.
 The CLI is JSON-native.
 
 ```bash
+palantir help
+
+palantir help runs start
+
+palantir commands list
+
+palantir commands inspect runs.start
+
 palantir project inspect
 
 palantir workflows list
@@ -236,6 +244,8 @@ palantir runs delete quiet-river-lantern
 
 echo '{"params":{"decision":"accept"}}' | palantir runs resume quiet-river-lantern
 ```
+
+`help`, `--help`, `commands list`, and `commands inspect <id>` return JSON with agent-oriented command descriptions, usage, inputs, outputs, and examples.
 
 `project inspect` returns resolved config files, plugin config schemas, plugin config values, and Seer mode. `workflows list` returns entrypoint workflows by default; pass `--all` to include internal workflow steps. `workflows inspect <id>` returns params JSON Schema, gate, and plugin source info. `start` reads `{"params":{...},"config":{"pluginId":{...}}}` from stdin and `resume` reads `{"params":{...}}` from stdin; no-params workflows can omit stdin. `start` and `resume` start detached execution and return immediately with run JSON.
 Use `runs wait` to block until a run is no longer active; it returns the same run shape as `runs inspect`. Interrupted runs include `run.interruption` with the paused workflow id, editable params, description, and fields. Completed or failed runs include `run.outcome`; failed runs also include `run.failed`. Use the stable id, generated name, or run path for later commands. `runs metrics` reports run totals plus per-workflow, per-agent, and per-command timing, token usage, and cost. Delete is allowed only after a run is no longer running.

@@ -22,22 +22,31 @@ const COMMANDS: readonly CliCommand[] = [
 		id: "commands.list",
 		path: ["commands", "list"],
 		description: "Use when an agent or human needs machine-readable Palantir CLI command metadata.",
-		usage: "palantir commands list [--all] [--json]",
-		options: ["--all: include hidden internal commands", "--json: accepted for explicit machine-readable output"],
+		usage: "palantir commands list [--all]",
+		options: ["--all: include hidden internal commands"],
 		output: "JSON object with command metadata under commands.",
-		examples: ["palantir commands list --json", "palantir commands list --all"],
+		examples: ["palantir commands list", "palantir commands list --all"],
 		execute: listCliCommands,
 	},
 	{
 		id: "commands.inspect",
 		path: ["commands", "inspect"],
 		description: "Use when an agent or human needs the usage contract for one Palantir CLI command.",
-		usage: "palantir commands inspect <command-id> [--json]",
+		usage: "palantir commands inspect <command-id>",
 		arguments: ["command-id: command metadata id such as runs.start"],
-		options: ["--json: accepted for explicit machine-readable output"],
 		output: "JSON object with one command metadata object under command.",
-		examples: ["palantir commands inspect runs.start --json"],
+		examples: ["palantir commands inspect runs.start"],
 		execute: inspectCliCommand,
+	},
+	{
+		id: "help",
+		path: ["help"],
+		description: "Use when reading JSON help for all Palantir commands, one command group, or one command.",
+		usage: "palantir help [command-or-group]",
+		arguments: ["command-or-group: optional command path such as runs or runs start"],
+		output: "JSON object with help metadata under help.",
+		examples: ["palantir help", "palantir help runs", "palantir help runs start", "palantir --help"],
+		execute: (args) => writeCliHelp(args),
 	},
 	{
 		id: "project.inspect",
@@ -330,14 +339,14 @@ type CliCommand = {
 type CliCommandInfo = Omit<CliCommand, "execute">;
 
 async function listCliCommands(args: readonly string[]): Promise<void> {
-	assertKnownFlags("commands list", args, ["--all", "--json"]);
+	assertKnownFlags("commands list", args, ["--all"]);
 	const shouldIncludeHidden = args.includes("--all");
 	writeJson({ commands: COMMANDS.filter((command) => shouldIncludeHidden || !command.hidden).map(cliCommandInfo) });
 }
 
 async function inspectCliCommand(args: readonly string[]): Promise<void> {
 	const commandId = requiredArg("commands inspect", args, 0, "command id");
-	assertKnownFlags("commands inspect", args.slice(1), ["--json"]);
+	assertNoExtraArgs("commands inspect", args.slice(1));
 	const command = COMMANDS.find((candidate) => candidate.id === commandId);
 	if (!command) throw new Error(`Unknown palantir command id: ${commandId}`);
 	writeJson({ command: cliCommandInfo(command) });
@@ -371,48 +380,28 @@ function cliHelpPath(args: readonly string[]): readonly string[] | undefined {
 function writeCliHelp(path: readonly string[]): void {
 	const command = findExactCliCommand(path);
 	if (command) {
-		process.stdout.write(renderCommandHelp(command));
+		writeJson({ help: { type: "command", command: cliCommandInfo(command) } });
 		return;
 	}
-	const groupCommands = visibleCommands().filter((candidate) => path.length === 0 || startsWithPath(candidate.path, path));
+	const groupCommands = sortedCommandsByPath(visibleCommands().filter((candidate) => path.length === 0 || startsWithPath(candidate.path, path)));
 	if (groupCommands.length === 0) throw new Error(`Unknown palantir help topic: ${path.join(" ")}`);
-	process.stdout.write(renderGroupHelp(path, groupCommands));
+	writeJson({
+		help: {
+			type: "group",
+			path,
+			usage: groupHelpUsage(path),
+			commands: groupCommands.map(cliCommandInfo),
+			commandMetadata: {
+				list: "palantir commands list",
+				inspect: "palantir commands inspect <command-id>",
+			},
+		},
+	});
 }
 
-function renderGroupHelp(path: readonly string[], commands: readonly CliCommand[]): string {
-	const title = path.length === 0 ? "Palantir CLI" : `palantir ${path.join(" ")}`;
-	const usage = path.length === 0 ? "palantir <command> [args]" : `palantir ${path.join(" ")} <command> [args]`;
-	return `${title}\n\nUsage:\n  ${usage}\n  palantir ${path.length === 0 ? "" : `${path.join(" ")} `}--help\n  palantir --version\n\nCommands:\n${renderCommandSummary(commands)}\n\nAgent metadata:\n  palantir commands list --json\n  palantir commands inspect <command-id> --json\n`;
-}
-
-function renderCommandSummary(commands: readonly CliCommand[]): string {
-	const sortedCommands = [...commands].sort((left, right) => left.path.join(" ").localeCompare(right.path.join(" ")));
-	const commandNames = sortedCommands.map((command) => command.path.join(" "));
-	const width = Math.max(...commandNames.map((name) => name.length));
-	return sortedCommands.map((command, index) => `  ${commandNames[index].padEnd(width)}  ${command.description}`).join("\n");
-}
-
-function renderCommandHelp(command: CliCommand): string {
-	return [
-		command.id,
-		"",
-		"Usage:",
-		`  ${command.usage}`,
-		"",
-		"Description:",
-		`  ${command.description}`,
-		...(command.arguments ? sectionLines("Arguments", command.arguments) : []),
-		...(command.options ? sectionLines("Options", command.options) : []),
-		...(command.stdin ? ["", "Stdin:", `  ${command.stdin}`] : []),
-		"",
-		"Output:",
-		`  ${command.output}`,
-		...sectionLines("Examples", command.examples),
-	].join("\n");
-}
-
-function sectionLines(title: string, lines: readonly string[]): readonly string[] {
-	return ["", `${title}:`, ...lines.map((line) => `  ${line}`)];
+function groupHelpUsage(path: readonly string[]): readonly string[] {
+	const prefix = path.length === 0 ? "palantir" : `palantir ${path.join(" ")}`;
+	return [path.length === 0 ? "palantir <command> [args]" : `${prefix} <command> [args]`, `${prefix} --help`, "palantir --version"];
 }
 
 function findCliCommand(args: readonly string[]): CliCommand | undefined {
@@ -425,6 +414,10 @@ function findExactCliCommand(path: readonly string[]): CliCommand | undefined {
 
 function sortedCommandsByPathLength(commands: readonly CliCommand[]): readonly CliCommand[] {
 	return [...commands].sort((left, right) => right.path.length - left.path.length);
+}
+
+function sortedCommandsByPath(commands: readonly CliCommand[]): readonly CliCommand[] {
+	return [...commands].sort((left, right) => left.path.join(" ").localeCompare(right.path.join(" ")));
 }
 
 function visibleCommands(): readonly CliCommand[] {
