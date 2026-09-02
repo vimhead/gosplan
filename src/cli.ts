@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { findPalantirProject, loadPalantirProject } from "./plugin-loader.ts";
 import { type PalantirAnyWorkflowDeclaration, type DeletedPalantirRunInfo, type PalantirProjectInfo, type PalantirRunInfo } from "./api.ts";
@@ -13,6 +13,7 @@ import { getRunLeaseOwner } from "./internal/run-lease.ts";
 import { PalantirRunStore } from "./internal/run-store.ts";
 import { readRunMetrics } from "./internal/metrics.ts";
 import { getRunInfo, listRuns, resolveRunRoot } from "./internal/run-state.ts";
+import { PALANTIR_BUILD_INFO, type PalantirBuildInfo, type PalantirGithubReleaseBinaryBuildInfo, type PalantirNpmGitGlobalBuildInfo } from "./build-info.ts";
 
 const RUNS_ROOT = join(".palantir", "runs");
 const RUN_WAIT_INTERVAL_MS = 1000;
@@ -281,15 +282,25 @@ const COMMANDS: readonly CliCommand[] = [
 		},
 	},
 	{
+		id: "upgrade",
+		path: ["upgrade"],
+		description: "Use when upgrading this Palantir CLI installation according to explicit build metadata.",
+		usage: "palantir upgrade [--dry-run]",
+		options: ["--dry-run: report the upgrade plan without changing files or running installers"],
+		output: "JSON object with upgrade status, plan, or unsupported reason under upgrade.",
+		examples: ["palantir upgrade --dry-run", "palantir upgrade"],
+		execute: upgradePalantir,
+	},
+	{
 		id: "version",
 		path: ["version"],
-		description: "Use when checking the installed Palantir CLI version.",
+		description: "Use when checking the installed Palantir CLI version and explicit build metadata.",
 		usage: "palantir version",
-		output: "JSON object with package version under version.",
+		output: "JSON object with package version under version and build metadata under build.",
 		examples: ["palantir version", "palantir --version"],
 		execute: async (args) => {
 			assertNoExtraArgs("version", args);
-			writeJson({ version: await readPackageVersion() });
+			writeJson(await versionInfo());
 		},
 	},
 ];
@@ -309,7 +320,7 @@ async function runCommand(args: readonly string[]): Promise<void> {
 		return;
 	}
 	if (isVersionRequest(args)) {
-		writeJson({ version: await readPackageVersion() });
+		writeJson(await versionInfo());
 		return;
 	}
 	const helpPath = cliHelpPath(args);
@@ -428,10 +439,152 @@ function startsWithPath(value: readonly string[], path: readonly string[]): bool
 	return path.every((segment, index) => value[index] === segment);
 }
 
+async function versionInfo(): Promise<{ readonly version: string; readonly build: PalantirBuildInfo }> {
+	return { version: await readPackageVersion(), build: PALANTIR_BUILD_INFO };
+}
+
 async function readPackageVersion(): Promise<string> {
-	const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown };
-	if (typeof packageJson.version !== "string") throw new Error("Invalid Palantir package version");
-	return packageJson.version;
+	try {
+		const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown };
+		if (typeof packageJson.version !== "string") throw new Error("Invalid Palantir package version");
+		return packageJson.version;
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return PALANTIR_BUILD_INFO.version;
+		throw error;
+	}
+}
+
+async function upgradePalantir(args: readonly string[]): Promise<void> {
+	assertKnownFlags("upgrade", args, ["--dry-run"]);
+	const dryRun = args.includes("--dry-run");
+	const currentVersion = await readPackageVersion();
+	const build = PALANTIR_BUILD_INFO;
+	if (build.kind === "unknown") {
+		writeJson({ upgrade: unsupportedUpgrade(build, currentVersion, build.upgrade.reason) });
+		return;
+	}
+	if (build.kind === "npm-git-global") {
+		writeJson({ upgrade: await upgradeNpmGitGlobal(build, currentVersion, dryRun) });
+		return;
+	}
+	writeJson({ upgrade: await upgradeGithubReleaseBinary(build, currentVersion, dryRun) });
+}
+
+function unsupportedUpgrade(build: PalantirBuildInfo, currentVersion: string, reason: string): Record<string, unknown> {
+	return {
+		supported: false,
+		kind: build.kind,
+		currentVersion,
+		buildVersion: build.version,
+		reason,
+	};
+}
+
+async function upgradeNpmGitGlobal(build: PalantirNpmGitGlobalBuildInfo, currentVersion: string, dryRun: boolean): Promise<Record<string, unknown>> {
+	const plan = {
+		supported: true,
+		kind: build.kind,
+		dryRun,
+		currentVersion,
+		buildVersion: build.version,
+		command: build.upgradeCommand,
+	};
+	if (dryRun) return { ...plan, status: "planned" };
+	const result = await runCapturedCommand(build.upgradeCommand);
+	return { ...plan, status: "completed", result };
+}
+
+async function upgradeGithubReleaseBinary(build: PalantirGithubReleaseBinaryBuildInfo, currentVersion: string, dryRun: boolean): Promise<Record<string, unknown>> {
+	const plan = githubReleaseBinaryUpgradePlan(build, currentVersion, dryRun);
+	if (dryRun) return { ...plan, status: "planned" };
+	if (process.platform === "win32") return unsupportedUpgrade(build, currentVersion, "Replacing a running Windows executable is not supported yet.");
+	const binary = await downloadReleaseAsset(plan.downloadUrl);
+	const checksumText = await downloadReleaseText(plan.checksumUrl);
+	const expectedChecksum = parseSha256Checksum(checksumText, build.checksumAssetName);
+	const actualChecksum = createHash("sha256").update(Buffer.from(binary)).digest("hex");
+	if (actualChecksum !== expectedChecksum) throw new Error(`Downloaded Palantir binary checksum mismatch: expected ${expectedChecksum}, got ${actualChecksum}`);
+	const tempPath = join(dirname(plan.targetPath), `.palantir-upgrade-${process.pid}-${build.assetName}`);
+	try {
+		await writeFile(tempPath, binary);
+		await chmod(tempPath, 0o755);
+		await rename(tempPath, plan.targetPath);
+	} catch (error) {
+		await rm(tempPath, { force: true });
+		throw error;
+	}
+	return { ...plan, status: "completed", checksum: actualChecksum };
+}
+
+function githubReleaseBinaryUpgradePlan(build: PalantirGithubReleaseBinaryBuildInfo, currentVersion: string, dryRun: boolean): {
+	readonly supported: true;
+	readonly kind: "github-release-binary";
+	readonly dryRun: boolean;
+	readonly currentVersion: string;
+	readonly buildVersion: string;
+	readonly repository: string;
+	readonly releaseTag: string;
+	readonly assetName: string;
+	readonly checksumAssetName: string;
+	readonly downloadUrl: string;
+	readonly checksumUrl: string;
+	readonly targetPath: string;
+} {
+	return {
+		supported: true,
+		kind: build.kind,
+		dryRun,
+		currentVersion,
+		buildVersion: build.version,
+		repository: build.repository,
+		releaseTag: build.releaseTag,
+		assetName: build.assetName,
+		checksumAssetName: build.checksumAssetName,
+		downloadUrl: githubReleaseDownloadUrl(build, build.assetName),
+		checksumUrl: githubReleaseDownloadUrl(build, build.checksumAssetName),
+		targetPath: process.execPath,
+	};
+}
+
+function githubReleaseDownloadUrl(build: PalantirGithubReleaseBinaryBuildInfo, assetName: string): string {
+	return `https://github.com/${build.repository}/releases/download/${build.releaseTag}/${assetName}`;
+}
+
+async function downloadReleaseAsset(url: string): Promise<Uint8Array> {
+	const response = await fetch(url);
+	if (!response.ok) throw new Error(`Failed to download Palantir release asset: ${url} returned ${response.status}`);
+	return new Uint8Array(await response.arrayBuffer());
+}
+
+async function downloadReleaseText(url: string): Promise<string> {
+	const response = await fetch(url);
+	if (!response.ok) throw new Error(`Failed to download Palantir release metadata: ${url} returned ${response.status}`);
+	return response.text();
+}
+
+function parseSha256Checksum(text: string, checksumAssetName: string): string {
+	const checksum = text.trim().split(/\s+/)[0] ?? "";
+	if (!/^[a-f0-9]{64}$/i.test(checksum)) throw new Error(`Invalid Palantir checksum asset: ${checksumAssetName}`);
+	return checksum.toLowerCase();
+}
+
+async function runCapturedCommand(command: readonly string[]): Promise<{ readonly command: readonly string[]; readonly exitCode: number | null; readonly stdout: string; readonly stderr: string }> {
+	const executable = requiredArg("upgrade command", command, 0, "executable");
+	return new Promise((resolvePromise, reject) => {
+		const child = spawn(executable, command.slice(1), { stdio: ["ignore", "pipe", "pipe"] });
+		let stdout = "";
+		let stderr = "";
+		child.stdout?.on("data", (chunk) => {
+			stdout += chunk.toString();
+		});
+		child.stderr?.on("data", (chunk) => {
+			stderr += chunk.toString();
+		});
+		child.on("error", reject);
+		child.on("close", (exitCode) => {
+			if (exitCode === 0) resolvePromise({ command, exitCode, stdout, stderr });
+			else reject(new Error(stderr || `Upgrade command exited with code ${exitCode}`));
+		});
+	});
 }
 
 function requiredArg(command: string, args: readonly string[], index: number, label: string): string {

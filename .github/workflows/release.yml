@@ -55,9 +55,29 @@ jobs:
         run: |
           set -euo pipefail
 
+          package_version="$(node -p "require('./package.json').version")"
+
+          write_binary_build_info() {
+            output="$1"
+            cat > src/generated-build-info.ts <<EOF
+          import type { PalantirBuildInfo } from "./build-info.ts";
+
+          export const PALANTIR_GENERATED_BUILD_INFO = {
+            kind: "github-release-binary",
+            version: "$package_version",
+            commit: "$TIP_COMMIT",
+            repository: "vimhead/palantir",
+            releaseTag: "$TIP_TAG",
+            assetName: "$output",
+            checksumAssetName: "$output.sha256",
+          } as const satisfies PalantirBuildInfo;
+          EOF
+          }
+
           build_binary() {
             target="$1"
             output="$2"
+            write_binary_build_info "$output"
             bun build --compile --target="$target" ./src/bun/cli.ts --outfile "dist/release/$output"
             chmod +x "dist/release/$output"
           }
@@ -71,7 +91,11 @@ jobs:
       - name: Write checksums
         run: |
           cd dist/release
-          sha256sum * > SHA256SUMS.txt
+          artifacts=(palantir-*)
+          for file in "${artifacts[@]}"; do
+            sha256sum "$file" > "$file.sha256"
+          done
+          sha256sum "${artifacts[@]}" > SHA256SUMS.txt
 
       - name: Point tip tag at this commit
         run: |
