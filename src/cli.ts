@@ -306,6 +306,54 @@ const COMMANDS: readonly CliCommand[] = [
 	},
 ];
 
+const HELP_COMMAND_ORDER = [
+	"commands.list",
+	"commands.inspect",
+	"workflows.list",
+	"workflows.inspect",
+	"runs.start",
+	"runs.resume",
+	"runs.wait",
+	"runs.list",
+	"runs.inspect",
+	"runs.logs",
+	"runs.checkpoints",
+	"runs.rollback",
+	"runs.metrics",
+	"runs.stop",
+	"runs.kill",
+	"runs.delete",
+	"project.inspect",
+	"seer.inspect",
+	"upgrade",
+	"version",
+	"help",
+];
+
+const HUMAN_COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
+	"commands.list": "List machine-readable command metadata.",
+	"commands.inspect": "Inspect one command's machine-readable contract.",
+	"workflows.list": "List Palantir workflows.",
+	"workflows.inspect": "Inspect a workflow schema and source.",
+	"runs.start": "Start a workflow run.",
+	"runs.resume": "Resume a stopped or interrupted run.",
+	"runs.wait": "Wait for a run to stop running.",
+	"runs.list": "List known runs.",
+	"runs.inspect": "Inspect a run.",
+	"runs.logs": "Read run event logs.",
+	"runs.checkpoints": "List run rollback checkpoints.",
+	"runs.rollback": "Roll back a run to a checkpoint.",
+	"runs.metrics": "Inspect run metrics.",
+	"runs.stop": "Stop a running run.",
+	"runs.kill": "Force-stop a running run.",
+	"runs.delete": "Delete an inactive run.",
+	"project.inspect": "Inspect the Palantir project.",
+	"seer.inspect": "Inspect resolved Seer mode.",
+	upgrade: "Upgrade the installed Palantir CLI.",
+	version: "Print version/build info.",
+	help: "Show concise command help.",
+};
+
 export async function main(args: readonly string[]): Promise<void> {
 	try {
 		await runCommand(args);
@@ -392,29 +440,67 @@ function cliHelpPath(args: readonly string[]): readonly string[] | undefined {
 function writeCliHelp(path: readonly string[]): void {
 	const command = findExactCliCommand(path);
 	if (command) {
-		writeJson({ help: { type: "command", description: CLI_DESCRIPTION, command: cliCommandInfo(command) } });
+		process.stdout.write(renderCommandHelp(command));
 		return;
 	}
-	const groupCommands = sortedCommandsByPath(visibleCommands().filter((candidate) => path.length === 0 || startsWithPath(candidate.path, path)));
+	const groupCommands = sortedCommandsForHelp(visibleCommands().filter((candidate) => path.length === 0 || startsWithPath(candidate.path, path)));
 	if (groupCommands.length === 0) throw new Error(`Unknown palantir help topic: ${path.join(" ")}`);
-	writeJson({
-		help: {
-			type: "group",
-			description: CLI_DESCRIPTION,
-			path,
-			usage: groupHelpUsage(path),
-			commands: groupCommands.map(cliCommandInfo),
-			commandMetadata: {
-				list: "palantir commands list",
-				inspect: "palantir commands inspect <command-id>",
-			},
-		},
-	});
+	process.stdout.write(renderGroupHelp(path, groupCommands));
+}
+
+function renderGroupHelp(path: readonly string[], commands: readonly CliCommand[]): string {
+	return [
+		"Palantir",
+		"",
+		CLI_DESCRIPTION,
+		"",
+		"Usage:",
+		...groupHelpUsage(path).map((line) => `  ${line}`),
+		"",
+		"Commands:",
+		renderCommandSummary(commands),
+		"",
+		"Machine-readable metadata:",
+		"  palantir commands list",
+		"  palantir commands inspect <command-id>",
+		"",
+	].join("\n");
+}
+
+function renderCommandHelp(command: CliCommand): string {
+	return [
+		commandHumanSummary(command),
+		"",
+		"Usage:",
+		`  ${command.usage}`,
+		"",
+		"Description:",
+		`  ${command.description}`,
+		...(command.arguments ? helpSection("Arguments", command.arguments) : []),
+		...(command.options ? helpSection("Options", command.options) : []),
+		...(command.stdin ? ["", "Stdin:", `  ${command.stdin}`] : []),
+		"",
+		"Output:",
+		`  ${command.output}`,
+		...helpSection("Examples", command.examples),
+		"",
+	].join("\n");
+}
+
+function renderCommandSummary(commands: readonly CliCommand[]): string {
+	const commandNames = commands.map((command) => command.path.join(" "));
+	const width = Math.max(...commandNames.map((name) => name.length));
+	return commands.map((command, index) => `  ${commandNames[index].padEnd(width)}  ${commandHumanSummary(command)}`).join("\n");
+}
+
+function helpSection(title: string, lines: readonly string[]): readonly string[] {
+	return ["", `${title}:`, ...lines.map((line) => `  ${line}`)];
 }
 
 function groupHelpUsage(path: readonly string[]): readonly string[] {
-	const prefix = path.length === 0 ? "palantir" : `palantir ${path.join(" ")}`;
-	return [path.length === 0 ? "palantir <command> [args]" : `${prefix} <command> [args]`, `${prefix} --help`, "palantir --version"];
+	if (path.length === 0) return ["palantir <command> [args]", "palantir help <command>", "palantir --version"];
+	const prefix = `palantir ${path.join(" ")}`;
+	return [`${prefix} <command> [args]`, `palantir help ${path.join(" ")} <command>`, "palantir --version"];
 }
 
 function findCliCommand(args: readonly string[]): CliCommand | undefined {
@@ -429,8 +515,17 @@ function sortedCommandsByPathLength(commands: readonly CliCommand[]): readonly C
 	return [...commands].sort((left, right) => right.path.length - left.path.length);
 }
 
-function sortedCommandsByPath(commands: readonly CliCommand[]): readonly CliCommand[] {
-	return [...commands].sort((left, right) => left.path.join(" ").localeCompare(right.path.join(" ")));
+function sortedCommandsForHelp(commands: readonly CliCommand[]): readonly CliCommand[] {
+	return [...commands].sort((left, right) => commandHelpOrder(left) - commandHelpOrder(right));
+}
+
+function commandHelpOrder(command: CliCommand): number {
+	const index = HELP_COMMAND_ORDER.indexOf(command.id);
+	return index === -1 ? HELP_COMMAND_ORDER.length : index;
+}
+
+function commandHumanSummary(command: CliCommand): string {
+	return HUMAN_COMMAND_SUMMARIES[command.id] ?? command.description;
 }
 
 function visibleCommands(): readonly CliCommand[] {
