@@ -1,9 +1,11 @@
 # norn
 
-Typed, resumable workflow plugins for coding agents.
+Reusable, harness-agnostic workflows powered by Pi agents.
 
-Norn gives a project a small workflow runtime, a TypeScript API for workflow
-plugins, and a JSON-native CLI for discovery, execution, inspection, and resume.
+Norn lets a project package agent workflows once and run them from any harness
+that can call the Norn CLI or client. Workflows combine Pi agent calls, shell
+commands, artifacts, state, gates, checkpoints, and resume into one reusable
+project capability.
 
 Contents:
 
@@ -118,7 +120,7 @@ export const planWorkflow = {
 ```
 
 A manifest gives the plugin an id, binds workflow declarations, and can define
-typed state leaves:
+state shared between workflow steps:
 
 ```ts
 import { definePluginManifest, workflowArtifactRefSchema } from "norn";

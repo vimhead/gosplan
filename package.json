@@ -1,7 +1,7 @@
 {
   "name": "norn",
   "version": "0.1.0",
-  "description": "Daemonless JSON-native workflow runtime for coding agents.",
+  "description": "Reusable harness-agnostic workflows powered by Pi agents.",
   "type": "module",
   "license": "MIT",
   "keywords": [
