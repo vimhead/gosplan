@@ -171,8 +171,8 @@ export default definePlugin(manifest, {
 });
 ```
 
-Workflow implementations return scheduler controls instead of calling other
-workflows directly:
+Workflow implementations return run controls instead of calling other workflows
+directly:
 
 ```ts
 return run.next(manifest.workflows.implement, {
