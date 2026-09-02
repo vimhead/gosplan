@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { findPalantirProject, loadPalantirProject, PALANTIR_CONFIG_FILE_NAME, PALANTIR_PROJECT_FILE_NAME } from "./plugin-loader.ts";
 import { type PalantirAnyWorkflowDeclaration, type DeletedPalantirRunInfo, type PalantirProjectInfo, type PalantirRunInfo } from "./api.ts";
@@ -965,12 +965,18 @@ async function writeRunLogs(run: string, options: { readonly follow: boolean }):
 }
 
 function startDetachedExecuteRun(runId: string, projectRoot: string): void {
-	const child = spawn(process.execPath, [process.argv[1] ?? "", "execute-run", runId], {
+	const child = spawn(process.execPath, detachedExecuteRunArgs(runId), {
 		cwd: projectRoot,
 		detached: true,
 		stdio: "ignore",
 	});
 	child.unref();
+}
+
+function detachedExecuteRunArgs(runId: string): readonly string[] {
+	if (PALANTIR_BUILD_INFO.kind === "github-release-binary") return ["execute-run", runId];
+	const scriptPath = process.argv[1];
+	return scriptPath && isAbsolute(scriptPath) && /\.(?:c?m?js|ts)$/.test(scriptPath) ? [scriptPath, "execute-run", runId] : ["execute-run", runId];
 }
 
 function startedRunInfo(input: {

@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import type { PalantirRunHealth, PalantirRunStatus, PalantirRunOutcomeMetadata, PalantirRunInfo, PalantirRunInterruption, PalantirRunOutcomeInfo, PalantirRunFailureInfo } from "../api.ts";
 import { isNodeError } from "./errors.ts";
+import { readRunLaunchRequest } from "./launch-request.ts";
 import { getRunLeaseHealth } from "./run-lease.ts";
 import { writeJsonAtomically } from "./json-file.ts";
 import { runCurrentRoot } from "./run-store.ts";
@@ -203,22 +204,27 @@ export async function listRuns(sessionCwd: string): Promise<PalantirRunInfo[]> {
 }
 
 export async function getRunInfo(runRoot: string): Promise<PalantirRunInfo> {
-	const state = parsePalantirRunState(await readRunStateJson(runCurrentRoot(runRoot)));
-	return {
-		version: state.version,
-		id: state.id,
-		name: state.name,
-		path: runRoot,
-		entrypointWorkflowId: state.entrypointWorkflowId,
-		currentWorkflowId: state.current?.workflowId,
-		status: state.status,
-		health: await runHealth(runRoot, state.status),
-		interruption: runInterruption(state),
-		outcome: runOutcome(state),
-		failed: runFailure(state),
-		startedAt: state.startedAt,
-		updatedAt: state.updatedAt,
-	};
+	try {
+		const state = parsePalantirRunState(await readRunStateJson(runCurrentRoot(runRoot)));
+		return {
+			version: state.version,
+			id: state.id,
+			name: state.name,
+			path: runRoot,
+			entrypointWorkflowId: state.entrypointWorkflowId,
+			currentWorkflowId: state.current?.workflowId,
+			status: state.status,
+			health: await runHealth(runRoot, state.status),
+			interruption: runInterruption(state),
+			outcome: runOutcome(state),
+			failed: runFailure(state),
+			startedAt: state.startedAt,
+			updatedAt: state.updatedAt,
+		};
+	} catch (error) {
+		if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+		return getLaunchedRunInfo(runRoot);
+	}
 }
 
 export async function resolveRunRoot(sessionCwd: string, run: string): Promise<string> {
@@ -255,6 +261,22 @@ async function readPalantirRunInfo(runRoot: string): Promise<PalantirRunInfo | u
 		if (isNodeError(error) && error.code === "ENOENT") return undefined;
 		throw error;
 	}
+}
+
+async function getLaunchedRunInfo(runRoot: string): Promise<PalantirRunInfo> {
+	const launchRequest = await readRunLaunchRequest(runRoot);
+	return {
+		version: launchRequest.version,
+		id: launchRequest.id,
+		name: launchRequest.name,
+		path: runRoot,
+		entrypointWorkflowId: launchRequest.workflowId,
+		currentWorkflowId: launchRequest.workflowId,
+		status: "running",
+		health: "healthy",
+		startedAt: launchRequest.createdAt,
+		updatedAt: launchRequest.createdAt,
+	};
 }
 
 async function readRunStateJson(currentRoot: string): Promise<unknown> {
