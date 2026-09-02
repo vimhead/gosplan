@@ -1,44 +1,44 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
-import type { PalantirAnyWorkflowDeclaration, PalantirProjectRun, PalantirRunOutcomeMetadata, PalantirWorkflowIsolationMode, PalantirWorkflowParamsInput, PalantirRun } from "../api.ts";
-import type { PalantirAgentResponseCollector } from "./agent-response-tool.ts";
-import type { PalantirArtifacts } from "./artifacts.ts";
-import { PalantirAgentRunner } from "./agents.ts";
-import { PalantirCommandRunner } from "./commands.ts";
-import type { PalantirRunLogs } from "./logs.ts";
-import type { PalantirRunLogger } from "./run-log.ts";
-import type { PalantirJsonWorkflowState } from "./state-store.ts";
+import type { NornAnyWorkflowDeclaration, NornProjectRun, NornRunOutcomeMetadata, NornWorkflowIsolationMode, NornWorkflowParamsInput, NornRun } from "../api.ts";
+import type { NornAgentResponseCollector } from "./agent-response-tool.ts";
+import type { NornArtifacts } from "./artifacts.ts";
+import { NornAgentRunner } from "./agents.ts";
+import { NornCommandRunner } from "./commands.ts";
+import type { NornRunLogs } from "./logs.ts";
+import type { NornRunLogger } from "./run-log.ts";
+import type { NornJsonWorkflowState } from "./state-store.ts";
 
-type DefaultPalantirRunInput = {
+type DefaultNornRunInput = {
 	readonly id: string;
 	readonly runRoot: string;
 	readonly projectRoot: string;
 	readonly workspace: string;
 	readonly cwd: string;
-	readonly isolationMode: PalantirWorkflowIsolationMode;
+	readonly isolationMode: NornWorkflowIsolationMode;
 	readonly signal?: AbortSignal;
 	readonly model?: CreateAgentSessionOptions["model"];
 	readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
 	readonly agentDir?: string;
-	readonly responseCollector: PalantirAgentResponseCollector;
-	readonly state: PalantirJsonWorkflowState;
-	readonly logger: PalantirRunLogger;
-	readonly artifacts: PalantirArtifacts;
-	readonly logs: PalantirRunLogs;
+	readonly responseCollector: NornAgentResponseCollector;
+	readonly state: NornJsonWorkflowState;
+	readonly logger: NornRunLogger;
+	readonly artifacts: NornArtifacts;
+	readonly logs: NornRunLogs;
 };
 
-export class PalantirRunContext implements PalantirProjectRun {
-	readonly state: PalantirRun["state"];
-	readonly artifacts: PalantirRun["artifacts"];
-	readonly logs: PalantirRun["logs"];
-	readonly commands: PalantirRun["commands"];
-	readonly agents: PalantirRun["agents"];
+export class NornRunContext implements NornProjectRun {
+	readonly state: NornRun["state"];
+	readonly artifacts: NornRun["artifacts"];
+	readonly logs: NornRun["logs"];
+	readonly commands: NornRun["commands"];
+	readonly agents: NornRun["agents"];
 	readonly id: string;
 	readonly workspace: string;
 	readonly projectRoot: string;
 	readonly cwd: string;
 
-	constructor(private readonly input: DefaultPalantirRunInput) {
+	constructor(private readonly input: DefaultNornRunInput) {
 		this.id = input.id;
 		this.workspace = input.workspace;
 		this.projectRoot = input.projectRoot;
@@ -50,7 +50,7 @@ export class PalantirRunContext implements PalantirProjectRun {
 		};
 		this.commands = {
 			run: (commandInput) =>
-				new PalantirCommandRunner({
+				new NornCommandRunner({
 					boundaryRoot: this.boundaryRoot,
 					boundaryName: this.input.isolationMode,
 					cwd: this.cwd,
@@ -65,9 +65,9 @@ export class PalantirRunContext implements PalantirProjectRun {
 		};
 	}
 
-	forWorkflow(workflow: PalantirAnyWorkflowDeclaration): PalantirRunContext {
+	forWorkflow(workflow: NornAnyWorkflowDeclaration): NornRunContext {
 		const isolationMode = workflow.isolation.mode;
-		return new PalantirRunContext({
+		return new NornRunContext({
 			...this.input,
 			isolationMode,
 			cwd: isolationMode === "project" ? this.projectRoot : this.workspace,
@@ -78,8 +78,8 @@ export class PalantirRunContext implements PalantirProjectRun {
 		return this.input.isolationMode === "project" ? this.projectRoot : this.workspace;
 	}
 
-	private createAgentRunner(): PalantirAgentRunner {
-		return new PalantirAgentRunner({
+	private createAgentRunner(): NornAgentRunner {
+		return new NornAgentRunner({
 			id: this.id,
 			runRoot: this.input.runRoot,
 			boundaryRoot: this.boundaryRoot,
@@ -103,12 +103,12 @@ export class PalantirRunContext implements PalantirProjectRun {
 		return this.resolveFromRoot(this.projectRoot, this.projectRoot, relativePath);
 	}
 
-	next<TWorkflow extends PalantirAnyWorkflowDeclaration>(
+	next<TWorkflow extends NornAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
-		params: PalantirWorkflowParamsInput<TWorkflow>,
-	): ReturnType<PalantirRun["next"]>;
-	next(workflowId: string, params: unknown): ReturnType<PalantirRun["next"]>;
-	next(workflow: PalantirAnyWorkflowDeclaration | string, params: unknown): ReturnType<PalantirRun["next"]> {
+		params: NornWorkflowParamsInput<TWorkflow>,
+	): ReturnType<NornRun["next"]>;
+	next(workflowId: string, params: unknown): ReturnType<NornRun["next"]>;
+	next(workflow: NornAnyWorkflowDeclaration | string, params: unknown): ReturnType<NornRun["next"]> {
 		return {
 			type: "next",
 			workflowId: typeof workflow === "string" ? workflow : workflow.id,
@@ -116,11 +116,11 @@ export class PalantirRunContext implements PalantirProjectRun {
 		};
 	}
 
-	complete(metadata?: PalantirRunOutcomeMetadata): ReturnType<PalantirRun["complete"]> {
+	complete(metadata?: NornRunOutcomeMetadata): ReturnType<NornRun["complete"]> {
 		return { type: "complete", metadata };
 	}
 
-	fail(metadata: PalantirRunOutcomeMetadata & { readonly summary: string }): ReturnType<PalantirRun["fail"]> {
+	fail(metadata: NornRunOutcomeMetadata & { readonly summary: string }): ReturnType<NornRun["fail"]> {
 		return { type: "fail", metadata };
 	}
 

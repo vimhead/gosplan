@@ -3,60 +3,60 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { findPalantirProject, loadPalantirProject, PALANTIR_CONFIG_FILE_NAME, PALANTIR_PROJECT_FILE_NAME } from "./plugin-loader.ts";
-import { type PalantirAnyWorkflowDeclaration, type DeletedPalantirRunInfo, type PalantirProjectInfo, type PalantirRunInfo } from "./api.ts";
-import { PalantirEngine } from "./internal/engine.ts";
+import { findNornProject, loadNornProject, NORN_CONFIG_FILE_NAME, NORN_PROJECT_FILE_NAME } from "./plugin-loader.ts";
+import { type NornAnyWorkflowDeclaration, type DeletedNornRunInfo, type NornProjectInfo, type NornRunInfo } from "./api.ts";
+import { NornEngine } from "./internal/engine.ts";
 import { errorMessage, isNodeError } from "./internal/errors.ts";
 import { readRunLaunchRequest, readRunResumeRequest, writeRunLaunchRequest, writeRunResumeRequest } from "./internal/launch-request.ts";
 import { generateRunName } from "./internal/run-names.ts";
 import { getRunLeaseOwner } from "./internal/run-lease.ts";
-import { PalantirRunStore } from "./internal/run-store.ts";
+import { NornRunStore } from "./internal/run-store.ts";
 import { readRunMetrics } from "./internal/metrics.ts";
 import { getRunInfo, listRuns, resolveRunRoot } from "./internal/run-state.ts";
-import { PALANTIR_BUILD_INFO, type PalantirBuildInfo, type PalantirGithubReleaseBinaryBuildInfo, type PalantirNpmGitGlobalBuildInfo } from "./build-info.ts";
+import { NORN_BUILD_INFO, type NornBuildInfo, type NornGithubReleaseBinaryBuildInfo, type NornNpmGitGlobalBuildInfo } from "./build-info.ts";
 
-const RUNS_ROOT = join(".palantir", "runs");
+const RUNS_ROOT = join(".norn", "runs");
 const RUN_WAIT_INTERVAL_MS = 1000;
-const CLI_DESCRIPTION = "Palantir runs typed, resumable workflows for coding agents. Use this JSON-native CLI to discover workflows, start or resume runs, inspect evidence, and manage the installed binary.";
+const CLI_DESCRIPTION = "Norn runs typed, resumable workflows for coding agents. Use this JSON-native CLI to discover workflows, start or resume runs, inspect evidence, and manage the installed binary.";
 
 const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "commands.list",
 		path: ["commands", "list"],
-		description: "Use when an agent or human needs machine-readable Palantir CLI command metadata.",
-		usage: "palantir commands list [--all]",
+		description: "Use when an agent or human needs machine-readable Norn CLI command metadata.",
+		usage: "norn commands list [--all]",
 		options: ["--all: include hidden internal commands"],
 		output: "JSON object with command metadata under commands.",
-		examples: ["palantir commands list", "palantir commands list --all"],
+		examples: ["norn commands list", "norn commands list --all"],
 		execute: listCliCommands,
 	},
 	{
 		id: "commands.inspect",
 		path: ["commands", "inspect"],
-		description: "Use when an agent or human needs the usage contract for one Palantir CLI command.",
-		usage: "palantir commands inspect <command-id>",
+		description: "Use when an agent or human needs the usage contract for one Norn CLI command.",
+		usage: "norn commands inspect <command-id>",
 		arguments: ["command-id: command metadata id such as runs.start"],
 		output: "JSON object with one command metadata object under command.",
-		examples: ["palantir commands inspect runs.start"],
+		examples: ["norn commands inspect runs.start"],
 		execute: inspectCliCommand,
 	},
 	{
 		id: "help",
 		path: ["help"],
-		description: "Use when reading JSON help for all Palantir commands, one command group, or one command.",
-		usage: "palantir help [command-or-group]",
+		description: "Use when reading JSON help for all Norn commands, one command group, or one command.",
+		usage: "norn help [command-or-group]",
 		arguments: ["command-or-group: optional command path such as runs or runs start"],
 		output: "JSON object with help metadata under help.",
-		examples: ["palantir help", "palantir help runs", "palantir help runs start", "palantir --help"],
+		examples: ["norn help", "norn help runs", "norn help runs start", "norn --help"],
 		execute: (args) => writeCliHelp(args),
 	},
 	{
 		id: "project.init",
 		path: ["project", "init"],
-		description: "Use when creating a Palantir project marker and local run state directory in the current directory.",
-		usage: "palantir project init",
+		description: "Use when creating a Norn project marker and local run state directory in the current directory.",
+		usage: "norn project init",
 		output: "JSON object with initialized project metadata under project.",
-		examples: ["palantir project init"],
+		examples: ["norn project init"],
 		execute: async (args) => {
 			assertNoExtraArgs("project init", args);
 			await initProject();
@@ -65,10 +65,10 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "project.inspect",
 		path: ["project", "inspect"],
-		description: "Use when discovering the active Palantir project, plugins, workflow sources, and Seer mode.",
-		usage: "palantir project inspect",
+		description: "Use when discovering the active Norn project, plugins, workflow sources, and Seer mode.",
+		usage: "norn project inspect",
 		output: "JSON object with project metadata under project.",
-		examples: ["palantir project inspect"],
+		examples: ["norn project inspect"],
 		execute: async (args) => {
 			assertNoExtraArgs("project inspect", args);
 			await inspectProject();
@@ -78,9 +78,9 @@ const COMMANDS: readonly CliCommand[] = [
 		id: "seer.inspect",
 		path: ["seer", "inspect"],
 		description: "Use when checking the current project's resolved Seer mode before agent execution.",
-		usage: "palantir seer inspect",
+		usage: "norn seer inspect",
 		output: "JSON object with resolved Seer mode under seerMode.",
-		examples: ["palantir seer inspect"],
+		examples: ["norn seer inspect"],
 		execute: async (args) => {
 			assertNoExtraArgs("seer inspect", args);
 			await inspectSeerMode();
@@ -89,21 +89,21 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "workflows.list",
 		path: ["workflows", "list"],
-		description: "Use when selecting a Palantir workflow for a user task; defaults to entrypoint workflows.",
-		usage: "palantir workflows list [--entrypoints|--all]",
+		description: "Use when selecting a Norn workflow for a user task; defaults to entrypoint workflows.",
+		usage: "norn workflows list [--entrypoints|--all]",
 		options: ["--entrypoints: list entrypoint workflows", "--all: include internal workflow steps"],
 		output: "JSON object with registered workflow summaries under workflows.",
-		examples: ["palantir workflows list", "palantir workflows list --all"],
+		examples: ["norn workflows list", "norn workflows list --all"],
 		execute: listWorkflows,
 	},
 	{
 		id: "workflows.inspect",
 		path: ["workflows", "inspect"],
 		description: "Use when reading a workflow's params schema, gate contract, description, and source plugin before starting or editing it.",
-		usage: "palantir workflows inspect <workflow-id>",
+		usage: "norn workflows inspect <workflow-id>",
 		arguments: ["workflow-id: fully qualified workflow id"],
 		output: "JSON object with inspected workflow details under workflow.",
-		examples: ["palantir workflows inspect example.plan"],
+		examples: ["norn workflows inspect example.plan"],
 		execute: async (args) => {
 			const workflowId = requiredArg("workflows inspect", args, 0, "workflow id");
 			assertNoExtraArgs("workflows inspect", args.slice(1));
@@ -113,12 +113,12 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.start",
 		path: ["runs", "start"],
-		description: "Use when starting a Palantir workflow run after the workflow id and params are known.",
-		usage: "palantir runs start <workflow-id>",
+		description: "Use when starting a Norn workflow run after the workflow id and params are known.",
+		usage: "norn runs start <workflow-id>",
 		arguments: ["workflow-id: fully qualified workflow id to start"],
 		stdin: "Optional JSON object: {\"params\":{...},\"config\":{\"pluginId\":{...}}}.",
 		output: "JSON object with started run info under run.",
-		examples: ["printf '{\"params\":{\"task\":\"Add tests\"}}' | palantir runs start example.plan"],
+		examples: ["printf '{\"params\":{\"task\":\"Add tests\"}}' | norn runs start example.plan"],
 		execute: async (args) => {
 			const workflowId = requiredArg("runs start", args, 0, "workflow id");
 			await startRun(workflowId, args.slice(1));
@@ -127,12 +127,12 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.resume",
 		path: ["runs", "resume"],
-		description: "Use when resuming a stopped or interrupted Palantir run, including answering an editable gate.",
-		usage: "palantir runs resume <run>",
+		description: "Use when resuming a stopped or interrupted Norn run, including answering an editable gate.",
+		usage: "norn runs resume <run>",
 		arguments: ["run: run id, generated name, or run path"],
 		stdin: "Optional JSON object: {\"params\":{...}}. Interrupted runs require params.",
 		output: "JSON object with resumed run info under run.",
-		examples: ["printf '{\"params\":{\"decision\":\"accept\"}}' | palantir runs resume quiet-river-lantern"],
+		examples: ["printf '{\"params\":{\"decision\":\"accept\"}}' | norn runs resume quiet-river-lantern"],
 		execute: async (args) => {
 			const run = requiredArg("runs resume", args, 0, "run");
 			await resumeRun(run, args.slice(1));
@@ -141,11 +141,11 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.wait",
 		path: ["runs", "wait"],
-		description: "Use when waiting for a Palantir run to finish, fail, interrupt, or become unhealthy.",
-		usage: "palantir runs wait <run>",
+		description: "Use when waiting for a Norn run to finish, fail, interrupt, or become unhealthy.",
+		usage: "norn runs wait <run>",
 		arguments: ["run: run id, generated name, or run path"],
 		output: "JSON object with final or current run info under run.",
-		examples: ["palantir runs wait quiet-river-lantern"],
+		examples: ["norn runs wait quiet-river-lantern"],
 		execute: async (args) => {
 			const run = requiredArg("runs wait", args, 0, "run");
 			assertNoExtraArgs("runs wait", args.slice(1));
@@ -155,10 +155,10 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.list",
 		path: ["runs", "list"],
-		description: "Use when listing known Palantir runs in the current project.",
-		usage: "palantir runs list",
+		description: "Use when listing known Norn runs in the current project.",
+		usage: "norn runs list",
 		output: "JSON object with run summaries under runs.",
-		examples: ["palantir runs list"],
+		examples: ["norn runs list"],
 		execute: async (args) => {
 			assertNoExtraArgs("runs list", args);
 			writeJson({ runs: await listCurrentProjectRuns() });
@@ -167,11 +167,11 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.inspect",
 		path: ["runs", "inspect"],
-		description: "Use when reading status, health, current workflow, interruption, and outcome details for one Palantir run.",
-		usage: "palantir runs inspect <run>",
+		description: "Use when reading status, health, current workflow, interruption, and outcome details for one Norn run.",
+		usage: "norn runs inspect <run>",
 		arguments: ["run: run id, generated name, or run path"],
 		output: "JSON object with run details under run.",
-		examples: ["palantir runs inspect quiet-river-lantern"],
+		examples: ["norn runs inspect quiet-river-lantern"],
 		execute: async (args) => {
 			const run = requiredArg("runs inspect", args, 0, "run");
 			assertNoExtraArgs("runs inspect", args.slice(1));
@@ -181,31 +181,31 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.checkpoints",
 		path: ["runs", "checkpoints"],
-		description: "Use when finding rollback points before retrying or repairing a Palantir run.",
-		usage: "palantir runs checkpoints <run>",
+		description: "Use when finding rollback points before retrying or repairing a Norn run.",
+		usage: "norn runs checkpoints <run>",
 		arguments: ["run: run id, generated name, or run path"],
 		output: "JSON object with checkpoints under checkpoints.",
-		examples: ["palantir runs checkpoints quiet-river-lantern"],
+		examples: ["norn runs checkpoints quiet-river-lantern"],
 		execute: async (args) => {
 			const run = requiredArg("runs checkpoints", args, 0, "run");
 			assertNoExtraArgs("runs checkpoints", args.slice(1));
-			const project = await findPalantirProject(process.cwd());
+			const project = await findNornProject(process.cwd());
 			const runRoot = await resolveRunRoot(project.projectRoot, run);
-			writeJson({ checkpoints: await (await PalantirRunStore.open(runRoot)).listCheckpoints() });
+			writeJson({ checkpoints: await (await NornRunStore.open(runRoot)).listCheckpoints() });
 		},
 	},
 	{
 		id: "runs.metrics",
 		path: ["runs", "metrics"],
-		description: "Use when measuring workflow, agent, command, token, and cost totals for a Palantir run.",
-		usage: "palantir runs metrics <run>",
+		description: "Use when measuring workflow, agent, command, token, and cost totals for a Norn run.",
+		usage: "norn runs metrics <run>",
 		arguments: ["run: run id, generated name, or run path"],
 		output: "JSON object with metrics under metrics.",
-		examples: ["palantir runs metrics quiet-river-lantern"],
+		examples: ["norn runs metrics quiet-river-lantern"],
 		execute: async (args) => {
 			const run = requiredArg("runs metrics", args, 0, "run");
 			assertNoExtraArgs("runs metrics", args.slice(1));
-			const project = await findPalantirProject(process.cwd());
+			const project = await findNornProject(process.cwd());
 			const runRoot = await resolveRunRoot(project.projectRoot, run);
 			writeJson({ metrics: await readRunMetrics(runRoot) });
 		},
@@ -213,12 +213,12 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.logs",
 		path: ["runs", "logs"],
-		description: "Use when streaming or reading chronological JSON events for a Palantir run.",
-		usage: "palantir runs logs <run> [--follow]",
+		description: "Use when streaming or reading chronological JSON events for a Norn run.",
+		usage: "norn runs logs <run> [--follow]",
 		arguments: ["run: run id, generated name, or run path"],
 		options: ["--follow: continue streaming until the run stops"],
 		output: "JSON Lines stream of run events.",
-		examples: ["palantir runs logs quiet-river-lantern", "palantir runs logs quiet-river-lantern --follow"],
+		examples: ["norn runs logs quiet-river-lantern", "norn runs logs quiet-river-lantern --follow"],
 		execute: async (args) => {
 			const run = requiredArg("runs logs", args, 0, "run");
 			const logArgs = args.slice(1);
@@ -229,11 +229,11 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.rollback",
 		path: ["runs", "rollback"],
-		description: "Use when restoring a Palantir run to a prior checkpoint before resuming after a fix.",
-		usage: "palantir runs rollback <run> <checkpoint-id>",
+		description: "Use when restoring a Norn run to a prior checkpoint before resuming after a fix.",
+		usage: "norn runs rollback <run> <checkpoint-id>",
 		arguments: ["run: run id, generated name, or run path", "checkpoint-id: checkpoint id from runs.checkpoints"],
 		output: "JSON object with rolled-back run info under run.",
-		examples: ["palantir runs rollback quiet-river-lantern checkpoint-1"],
+		examples: ["norn runs rollback quiet-river-lantern checkpoint-1"],
 		execute: async (args) => {
 			const run = requiredArg("runs rollback", args, 0, "run");
 			await rollbackRun(run, args.slice(1));
@@ -242,11 +242,11 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.stop",
 		path: ["runs", "stop"],
-		description: "Use when politely stopping a running Palantir execution process.",
-		usage: "palantir runs stop <run>",
+		description: "Use when politely stopping a running Norn execution process.",
+		usage: "norn runs stop <run>",
 		arguments: ["run: run id, generated name, or run path"],
 		output: "JSON object with updated run info under run.",
-		examples: ["palantir runs stop quiet-river-lantern"],
+		examples: ["norn runs stop quiet-river-lantern"],
 		execute: async (args) => {
 			const run = requiredArg("runs stop", args, 0, "run");
 			assertNoExtraArgs("runs stop", args.slice(1));
@@ -256,11 +256,11 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.kill",
 		path: ["runs", "kill"],
-		description: "Use when force-stopping a Palantir execution process that did not stop politely.",
-		usage: "palantir runs kill <run>",
+		description: "Use when force-stopping a Norn execution process that did not stop politely.",
+		usage: "norn runs kill <run>",
 		arguments: ["run: run id, generated name, or run path"],
 		output: "JSON object with updated run info under run.",
-		examples: ["palantir runs kill quiet-river-lantern"],
+		examples: ["norn runs kill quiet-river-lantern"],
 		execute: async (args) => {
 			const run = requiredArg("runs kill", args, 0, "run");
 			assertNoExtraArgs("runs kill", args.slice(1));
@@ -270,11 +270,11 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.delete",
 		path: ["runs", "delete"],
-		description: "Use when deleting an inactive Palantir run directory after evidence is no longer needed.",
-		usage: "palantir runs delete <run>",
+		description: "Use when deleting an inactive Norn run directory after evidence is no longer needed.",
+		usage: "norn runs delete <run>",
 		arguments: ["run: run id, generated name, or run path"],
 		output: "JSON object with deleted run identity under deleted.",
-		examples: ["palantir runs delete quiet-river-lantern"],
+		examples: ["norn runs delete quiet-river-lantern"],
 		execute: async (args) => {
 			const run = requiredArg("runs delete", args, 0, "run");
 			assertNoExtraArgs("runs delete", args.slice(1));
@@ -285,11 +285,11 @@ const COMMANDS: readonly CliCommand[] = [
 		id: "execute-run",
 		path: ["execute-run"],
 		description: "Use internally when executing a previously launched detached run request.",
-		usage: "palantir execute-run <run-id>",
+		usage: "norn execute-run <run-id>",
 		arguments: ["run-id: internal run id"],
 		output: "No stable stdout contract; execution state is persisted in the run directory.",
 		hidden: true,
-		examples: ["palantir execute-run 00000000-0000-0000-0000-000000000000"],
+		examples: ["norn execute-run 00000000-0000-0000-0000-000000000000"],
 		execute: async (args) => {
 			const runId = requiredArg("execute-run", args, 0, "run id");
 			assertNoExtraArgs("execute-run", args.slice(1));
@@ -299,20 +299,20 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "upgrade",
 		path: ["upgrade"],
-		description: "Use when upgrading this Palantir CLI installation according to explicit build metadata.",
-		usage: "palantir upgrade [--dry-run]",
+		description: "Use when upgrading this Norn CLI installation according to explicit build metadata.",
+		usage: "norn upgrade [--dry-run]",
 		options: ["--dry-run: report the upgrade plan without changing files or running installers"],
 		output: "JSON object with upgrade status, plan, or unsupported reason under upgrade.",
-		examples: ["palantir upgrade --dry-run", "palantir upgrade"],
-		execute: upgradePalantir,
+		examples: ["norn upgrade --dry-run", "norn upgrade"],
+		execute: upgradeNorn,
 	},
 	{
 		id: "version",
 		path: ["version"],
-		description: "Use when checking the installed Palantir CLI version and explicit build metadata.",
-		usage: "palantir version",
+		description: "Use when checking the installed Norn CLI version and explicit build metadata.",
+		usage: "norn version",
 		output: "JSON object with package version under version and build metadata under build.",
-		examples: ["palantir version", "palantir --version"],
+		examples: ["norn version", "norn --version"],
 		execute: async (args) => {
 			assertNoExtraArgs("version", args);
 			writeJson(await versionInfo());
@@ -348,7 +348,7 @@ const HELP_COMMAND_ORDER = [
 const HUMAN_COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
 	"commands.list": "List machine-readable command metadata.",
 	"commands.inspect": "Inspect one command's machine-readable contract.",
-	"workflows.list": "List Palantir workflows.",
+	"workflows.list": "List Norn workflows.",
 	"workflows.inspect": "Inspect a workflow schema and source.",
 	"runs.start": "Start a workflow run.",
 	"runs.resume": "Resume a stopped or interrupted run.",
@@ -362,10 +362,10 @@ const HUMAN_COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
 	"runs.stop": "Stop a running run.",
 	"runs.kill": "Force-stop a running run.",
 	"runs.delete": "Delete an inactive run.",
-	"project.init": "Create a Palantir project in the current directory.",
-	"project.inspect": "Inspect the Palantir project.",
+	"project.init": "Create a Norn project in the current directory.",
+	"project.inspect": "Inspect the Norn project.",
 	"seer.inspect": "Inspect resolved Seer mode.",
-	upgrade: "Upgrade the installed Palantir CLI.",
+	upgrade: "Upgrade the installed Norn CLI.",
 	version: "Print version/build info.",
 	help: "Show concise command help.",
 };
@@ -394,7 +394,7 @@ async function runCommand(args: readonly string[]): Promise<void> {
 		return;
 	}
 	const command = findCliCommand(args);
-	if (!command) throw new Error(`Unknown palantir command: ${args.join(" ")}`);
+	if (!command) throw new Error(`Unknown norn command: ${args.join(" ")}`);
 	await command.execute(args.slice(command.path.length));
 }
 
@@ -424,7 +424,7 @@ async function inspectCliCommand(args: readonly string[]): Promise<void> {
 	const commandId = requiredArg("commands inspect", args, 0, "command id");
 	assertNoExtraArgs("commands inspect", args.slice(1));
 	const command = COMMANDS.find((candidate) => candidate.id === commandId);
-	if (!command) throw new Error(`Unknown palantir command id: ${commandId}`);
+	if (!command) throw new Error(`Unknown norn command id: ${commandId}`);
 	writeJson({ command: cliCommandInfo(command) });
 }
 
@@ -460,13 +460,13 @@ function writeCliHelp(path: readonly string[]): void {
 		return;
 	}
 	const groupCommands = sortedCommandsForHelp(visibleCommands().filter((candidate) => path.length === 0 || startsWithPath(candidate.path, path)));
-	if (groupCommands.length === 0) throw new Error(`Unknown palantir help topic: ${path.join(" ")}`);
+	if (groupCommands.length === 0) throw new Error(`Unknown norn help topic: ${path.join(" ")}`);
 	process.stdout.write(renderGroupHelp(path, groupCommands));
 }
 
 function renderGroupHelp(path: readonly string[], commands: readonly CliCommand[]): string {
 	return [
-		"Palantir",
+		"Norn",
 		"",
 		CLI_DESCRIPTION,
 		"",
@@ -477,8 +477,8 @@ function renderGroupHelp(path: readonly string[], commands: readonly CliCommand[
 		renderCommandSummary(commands),
 		"",
 		"Machine-readable metadata:",
-		"  palantir commands list",
-		"  palantir commands inspect <command-id>",
+		"  norn commands list",
+		"  norn commands inspect <command-id>",
 		"",
 	].join("\n");
 }
@@ -514,9 +514,9 @@ function helpSection(title: string, lines: readonly string[]): readonly string[]
 }
 
 function groupHelpUsage(path: readonly string[]): readonly string[] {
-	if (path.length === 0) return ["palantir <command> [args]", "palantir help <command>", "palantir --version"];
-	const prefix = `palantir ${path.join(" ")}`;
-	return [`${prefix} <command> [args]`, `palantir help ${path.join(" ")} <command>`, "palantir --version"];
+	if (path.length === 0) return ["norn <command> [args]", "norn help <command>", "norn --version"];
+	const prefix = `norn ${path.join(" ")}`;
+	return [`${prefix} <command> [args]`, `norn help ${path.join(" ")} <command>`, "norn --version"];
 }
 
 function findCliCommand(args: readonly string[]): CliCommand | undefined {
@@ -552,26 +552,26 @@ function startsWithPath(value: readonly string[], path: readonly string[]): bool
 	return path.every((segment, index) => value[index] === segment);
 }
 
-async function versionInfo(): Promise<{ readonly version: string; readonly build: PalantirBuildInfo }> {
-	return { version: await readPackageVersion(), build: PALANTIR_BUILD_INFO };
+async function versionInfo(): Promise<{ readonly version: string; readonly build: NornBuildInfo }> {
+	return { version: await readPackageVersion(), build: NORN_BUILD_INFO };
 }
 
 async function readPackageVersion(): Promise<string> {
 	try {
 		const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown };
-		if (typeof packageJson.version !== "string") throw new Error("Invalid Palantir package version");
+		if (typeof packageJson.version !== "string") throw new Error("Invalid Norn package version");
 		return packageJson.version;
 	} catch (error) {
-		if (isNodeError(error) && error.code === "ENOENT") return PALANTIR_BUILD_INFO.version;
+		if (isNodeError(error) && error.code === "ENOENT") return NORN_BUILD_INFO.version;
 		throw error;
 	}
 }
 
-async function upgradePalantir(args: readonly string[]): Promise<void> {
+async function upgradeNorn(args: readonly string[]): Promise<void> {
 	assertKnownFlags("upgrade", args, ["--dry-run"]);
 	const dryRun = args.includes("--dry-run");
 	const currentVersion = await readPackageVersion();
-	const build = PALANTIR_BUILD_INFO;
+	const build = NORN_BUILD_INFO;
 	if (build.kind === "unknown") {
 		writeJson({ upgrade: unsupportedUpgrade(build, currentVersion, build.upgrade.reason) });
 		return;
@@ -583,7 +583,7 @@ async function upgradePalantir(args: readonly string[]): Promise<void> {
 	writeJson({ upgrade: await upgradeGithubReleaseBinary(build, currentVersion, dryRun) });
 }
 
-function unsupportedUpgrade(build: PalantirBuildInfo, currentVersion: string, reason: string): Record<string, unknown> {
+function unsupportedUpgrade(build: NornBuildInfo, currentVersion: string, reason: string): Record<string, unknown> {
 	return {
 		supported: false,
 		kind: build.kind,
@@ -593,7 +593,7 @@ function unsupportedUpgrade(build: PalantirBuildInfo, currentVersion: string, re
 	};
 }
 
-async function upgradeNpmGitGlobal(build: PalantirNpmGitGlobalBuildInfo, currentVersion: string, dryRun: boolean): Promise<Record<string, unknown>> {
+async function upgradeNpmGitGlobal(build: NornNpmGitGlobalBuildInfo, currentVersion: string, dryRun: boolean): Promise<Record<string, unknown>> {
 	const plan = {
 		supported: true,
 		kind: build.kind,
@@ -607,7 +607,7 @@ async function upgradeNpmGitGlobal(build: PalantirNpmGitGlobalBuildInfo, current
 	return { ...plan, status: "completed", result };
 }
 
-async function upgradeGithubReleaseBinary(build: PalantirGithubReleaseBinaryBuildInfo, currentVersion: string, dryRun: boolean): Promise<Record<string, unknown>> {
+async function upgradeGithubReleaseBinary(build: NornGithubReleaseBinaryBuildInfo, currentVersion: string, dryRun: boolean): Promise<Record<string, unknown>> {
 	const plan = githubReleaseBinaryUpgradePlan(build, currentVersion, dryRun);
 	if (dryRun) return { ...plan, status: "planned" };
 	if (process.platform === "win32") return unsupportedUpgrade(build, currentVersion, "Replacing a running Windows executable is not supported yet.");
@@ -615,8 +615,8 @@ async function upgradeGithubReleaseBinary(build: PalantirGithubReleaseBinaryBuil
 	const checksumText = await downloadReleaseText(plan.checksumUrl);
 	const expectedChecksum = parseSha256Checksum(checksumText, build.checksumAssetName);
 	const actualChecksum = createHash("sha256").update(Buffer.from(binary)).digest("hex");
-	if (actualChecksum !== expectedChecksum) throw new Error(`Downloaded Palantir binary checksum mismatch: expected ${expectedChecksum}, got ${actualChecksum}`);
-	const tempPath = join(dirname(plan.targetPath), `.palantir-upgrade-${process.pid}-${build.assetName}`);
+	if (actualChecksum !== expectedChecksum) throw new Error(`Downloaded Norn binary checksum mismatch: expected ${expectedChecksum}, got ${actualChecksum}`);
+	const tempPath = join(dirname(plan.targetPath), `.norn-upgrade-${process.pid}-${build.assetName}`);
 	try {
 		await writeFile(tempPath, binary);
 		await chmod(tempPath, 0o755);
@@ -628,7 +628,7 @@ async function upgradeGithubReleaseBinary(build: PalantirGithubReleaseBinaryBuil
 	return { ...plan, status: "completed", checksum: actualChecksum };
 }
 
-function githubReleaseBinaryUpgradePlan(build: PalantirGithubReleaseBinaryBuildInfo, currentVersion: string, dryRun: boolean): {
+function githubReleaseBinaryUpgradePlan(build: NornGithubReleaseBinaryBuildInfo, currentVersion: string, dryRun: boolean): {
 	readonly supported: true;
 	readonly kind: "github-release-binary";
 	readonly dryRun: boolean;
@@ -658,25 +658,25 @@ function githubReleaseBinaryUpgradePlan(build: PalantirGithubReleaseBinaryBuildI
 	};
 }
 
-function githubReleaseDownloadUrl(build: PalantirGithubReleaseBinaryBuildInfo, assetName: string): string {
+function githubReleaseDownloadUrl(build: NornGithubReleaseBinaryBuildInfo, assetName: string): string {
 	return `https://github.com/${build.repository}/releases/download/${build.releaseTag}/${assetName}`;
 }
 
 async function downloadReleaseAsset(url: string): Promise<Uint8Array> {
 	const response = await fetch(url);
-	if (!response.ok) throw new Error(`Failed to download Palantir release asset: ${url} returned ${response.status}`);
+	if (!response.ok) throw new Error(`Failed to download Norn release asset: ${url} returned ${response.status}`);
 	return new Uint8Array(await response.arrayBuffer());
 }
 
 async function downloadReleaseText(url: string): Promise<string> {
 	const response = await fetch(url);
-	if (!response.ok) throw new Error(`Failed to download Palantir release metadata: ${url} returned ${response.status}`);
+	if (!response.ok) throw new Error(`Failed to download Norn release metadata: ${url} returned ${response.status}`);
 	return response.text();
 }
 
 function parseSha256Checksum(text: string, checksumAssetName: string): string {
 	const checksum = text.trim().split(/\s+/)[0] ?? "";
-	if (!/^[a-f0-9]{64}$/i.test(checksum)) throw new Error(`Invalid Palantir checksum asset: ${checksumAssetName}`);
+	if (!/^[a-f0-9]{64}$/i.test(checksum)) throw new Error(`Invalid Norn checksum asset: ${checksumAssetName}`);
 	return checksum.toLowerCase();
 }
 
@@ -718,12 +718,12 @@ function assertKnownFlags(command: string, args: readonly string[], flags: reado
 
 async function listWorkflows(args: readonly string[]): Promise<void> {
 	assertKnownFlags("workflows list", args, ["--entrypoints", "--all"]);
-	const project = await loadPalantirProject(process.cwd());
+	const project = await loadNornProject(process.cwd());
 	writeJson({ workflows: project.registry.list({ entrypointsOnly: workflowListEntrypointsOnly(args) }) });
 }
 
 async function inspectWorkflow(workflowId: string): Promise<void> {
-	const project = await loadPalantirProject(process.cwd());
+	const project = await loadNornProject(process.cwd());
 	const workflow = project.registry.inspect(workflowId);
 	if (!workflow) throw new Error(`Unknown workflow: ${workflowId}`);
 	writeJson({ workflow });
@@ -738,8 +738,8 @@ function workflowListEntrypointsOnly(args: readonly string[]): boolean {
 
 async function initProject(): Promise<void> {
 	const projectRoot = process.cwd();
-	const projectPath = resolve(projectRoot, PALANTIR_PROJECT_FILE_NAME);
-	if (await isFile(projectPath)) throw new Error(`Palantir project already exists: ${projectPath}`);
+	const projectPath = resolve(projectRoot, NORN_PROJECT_FILE_NAME);
+	if (await isFile(projectPath)) throw new Error(`Norn project already exists: ${projectPath}`);
 	await mkdir(resolve(projectRoot, RUNS_ROOT), { recursive: true });
 	const includes = await defaultProjectIncludes(projectRoot);
 	await writeFile(projectPath, `${JSON.stringify({ version: 1, includes, config: {} }, null, 2)}\n`, "utf8");
@@ -748,20 +748,20 @@ async function initProject(): Promise<void> {
 }
 
 async function defaultProjectIncludes(projectRoot: string): Promise<readonly string[]> {
-	return await isFile(resolve(projectRoot, PALANTIR_CONFIG_FILE_NAME)) ? [`./${PALANTIR_CONFIG_FILE_NAME}`] : [];
+	return await isFile(resolve(projectRoot, NORN_CONFIG_FILE_NAME)) ? [`./${NORN_CONFIG_FILE_NAME}`] : [];
 }
 
-async function listCurrentProjectRuns(): Promise<PalantirRunInfo[]> {
-	const project = await findPalantirProject(process.cwd());
+async function listCurrentProjectRuns(): Promise<NornRunInfo[]> {
+	const project = await findNornProject(process.cwd());
 	return listRuns(project.projectRoot);
 }
 
 async function inspectProject(): Promise<void> {
-	const project = await loadPalantirProject(process.cwd());
+	const project = await loadNornProject(process.cwd());
 	writeJson({ project: projectInfo(project) });
 }
 
-function projectInfo(project: Awaited<ReturnType<typeof loadPalantirProject>>): PalantirProjectInfo {
+function projectInfo(project: Awaited<ReturnType<typeof loadNornProject>>): NornProjectInfo {
 	return {
 		cwd: project.cwd,
 		projectPath: project.projectPath,
@@ -775,13 +775,13 @@ function projectInfo(project: Awaited<ReturnType<typeof loadPalantirProject>>): 
 }
 
 async function inspectSeerMode(): Promise<void> {
-	const project = await findPalantirProject(process.cwd());
+	const project = await findNornProject(process.cwd());
 	writeJson({ seerMode: project.seerMode ?? null });
 }
 
 async function startRun(workflowId: string, args: readonly string[]): Promise<void> {
 	assertNoStructuredInputArgs("runs start", args);
-	const project = await loadPalantirProject(process.cwd());
+	const project = await loadNornProject(process.cwd());
 	const workflow = project.registry.workflowById(workflowId);
 	if (!workflow) throw new Error(`Unknown workflow: ${workflowId}`);
 	const input = parseStartRunInput(await readStdinJson());
@@ -799,7 +799,7 @@ async function startRun(workflowId: string, args: readonly string[]): Promise<vo
 
 async function resumeRun(run: string, args: readonly string[]): Promise<void> {
 	assertNoStructuredInputArgs("runs resume", args);
-	const project = await loadPalantirProject(process.cwd());
+	const project = await loadNornProject(process.cwd());
 	const runRoot = await resolveRunRoot(project.projectRoot, run);
 	const runInfo = await getRunInfo(runRoot);
 	const input = parseResumeRunInput(await readStdinJson());
@@ -809,22 +809,22 @@ async function resumeRun(run: string, args: readonly string[]): Promise<void> {
 	writeJson({ run: { ...runInfo, status: "running", health: "healthy", interruption: undefined, updatedAt: new Date().toISOString() } });
 }
 
-async function parseResumeParams(runInfo: PalantirRunInfo, params: unknown): Promise<unknown> {
+async function parseResumeParams(runInfo: NornRunInfo, params: unknown): Promise<unknown> {
 	if (runInfo.status === "interrupted" && params === undefined) throw new Error(`Interrupted workflow resume requires params: ${runInfo.name}`);
 	if (params === undefined) return undefined;
 	if (!runInfo.currentWorkflowId) throw new Error(`Run has no current workflow: ${runInfo.name}`);
-	const project = await loadPalantirProject(process.cwd());
+	const project = await loadNornProject(process.cwd());
 	const workflow = project.registry.workflowById(runInfo.currentWorkflowId);
 	if (!workflow) throw new Error(`Unknown workflow for resumed run: ${runInfo.currentWorkflowId}`);
 	return workflow.params.parse(params);
 }
 
 async function waitRun(run: string): Promise<void> {
-	const project = await findPalantirProject(process.cwd());
+	const project = await findNornProject(process.cwd());
 	writeJson({ run: await waitForInactiveRun(project.projectRoot, run) });
 }
 
-async function waitForInactiveRun(projectRoot: string, run: string): Promise<PalantirRunInfo> {
+async function waitForInactiveRun(projectRoot: string, run: string): Promise<NornRunInfo> {
 	let runRoot: string | undefined;
 	while (true) {
 		runRoot ??= await resolveWaitableRunRoot(projectRoot, run);
@@ -869,7 +869,7 @@ async function isFile(path: string): Promise<boolean> {
 
 async function ensureGitignoreExcludesRunState(projectRoot: string): Promise<void> {
 	const gitignorePath = resolve(projectRoot, ".gitignore");
-	const runStatePattern = ".palantir/runs/";
+	const runStatePattern = ".norn/runs/";
 	let currentText = "";
 	try {
 		currentText = await readFile(gitignorePath, "utf8");
@@ -885,9 +885,9 @@ async function executeRun(runId: string): Promise<void> {
 	const abortController = new AbortController();
 	process.once("SIGTERM", () => abortController.abort(new Error("Stopped by user")));
 	process.once("SIGINT", () => abortController.abort(new Error("Interrupted")));
-	const project = await loadPalantirProject(process.cwd());
+	const project = await loadNornProject(process.cwd());
 	const runRoot = resolve(project.projectRoot, RUNS_ROOT, runId);
-	const engine = new PalantirEngine({ cwd: project.projectRoot, signal: abortController.signal, gateMode: "pause", config: project.projectConfig });
+	const engine = new NornEngine({ cwd: project.projectRoot, signal: abortController.signal, gateMode: "pause", config: project.projectConfig });
 	for (const plugin of project.plugins) engine.registerPlugin(plugin);
 	const launchRequest = await readOptionalRunLaunchRequest(runRoot);
 	if (launchRequest) {
@@ -911,30 +911,30 @@ async function executeRun(runId: string): Promise<void> {
 async function rollbackRun(run: string, args: readonly string[]): Promise<void> {
 	const checkpointId = requiredArg("runs rollback", args, 0, "checkpoint id");
 	assertNoExtraArgs("runs rollback", args.slice(1));
-	const project = await findPalantirProject(process.cwd());
+	const project = await findNornProject(process.cwd());
 	const runRoot = await resolveRunRoot(project.projectRoot, run);
-	const engine = new PalantirEngine({ cwd: project.projectRoot, gateMode: "pause" });
+	const engine = new NornEngine({ cwd: project.projectRoot, gateMode: "pause" });
 	writeJson({ run: await engine.rollbackRun(runRoot, checkpointId) });
 }
 
-async function inspectRun(run: string): Promise<PalantirRunInfo> {
-	const project = await findPalantirProject(process.cwd());
+async function inspectRun(run: string): Promise<NornRunInfo> {
+	const project = await findNornProject(process.cwd());
 	return readRunInspection(await resolveRunRoot(project.projectRoot, run));
 }
 
-async function readRunInspection(runRoot: string): Promise<PalantirRunInfo> {
+async function readRunInspection(runRoot: string): Promise<NornRunInfo> {
 	return getRunInfo(runRoot);
 }
 
 async function signalRun(run: string, signal: NodeJS.Signals): Promise<void> {
-	const project = await findPalantirProject(process.cwd());
+	const project = await findNornProject(process.cwd());
 	const runRoot = await resolveRunRoot(project.projectRoot, run);
 	await terminateRun(runRoot, signal);
 	writeJson({ run: await getRunInfo(runRoot) });
 }
 
-async function deleteRun(run: string): Promise<DeletedPalantirRunInfo> {
-	const project = await findPalantirProject(process.cwd());
+async function deleteRun(run: string): Promise<DeletedNornRunInfo> {
+	const project = await findNornProject(process.cwd());
 	const runRoot = await resolveRunRoot(project.projectRoot, run);
 	const runInfo = await getRunInfo(runRoot);
 	if (runInfo.status === "running") throw new Error(`Stop run before deleting it: ${runInfo.name}`);
@@ -950,7 +950,7 @@ async function terminateRun(runRoot: string, signal: NodeJS.Signals): Promise<vo
 }
 
 async function writeRunLogs(run: string, options: { readonly follow: boolean }): Promise<void> {
-	const project = await findPalantirProject(process.cwd());
+	const project = await findNornProject(process.cwd());
 	const runRoot = await resolveRunRoot(project.projectRoot, run);
 	let written = 0;
 	while (true) {
@@ -974,7 +974,7 @@ function startDetachedExecuteRun(runId: string, projectRoot: string): void {
 }
 
 function detachedExecuteRunArgs(runId: string): readonly string[] {
-	if (PALANTIR_BUILD_INFO.kind === "github-release-binary") return ["execute-run", runId];
+	if (NORN_BUILD_INFO.kind === "github-release-binary") return ["execute-run", runId];
 	const scriptPath = process.argv[1];
 	return scriptPath && isAbsolute(scriptPath) && /\.(?:c?m?js|ts)$/.test(scriptPath) ? [scriptPath, "execute-run", runId] : ["execute-run", runId];
 }
@@ -982,10 +982,10 @@ function detachedExecuteRunArgs(runId: string): readonly string[] {
 function startedRunInfo(input: {
 	readonly id: string;
 	readonly name: string;
-	readonly workflow: PalantirAnyWorkflowDeclaration;
+	readonly workflow: NornAnyWorkflowDeclaration;
 	readonly runRoot: string;
 	readonly createdAt: string;
-}): PalantirRunInfo {
+}): NornRunInfo {
 	return {
 		version: 1,
 		id: input.id,
@@ -1094,5 +1094,5 @@ function writeJson(value: unknown): void {
 
 function errorCode(error: unknown): string {
 	if (error instanceof SyntaxError) return "INVALID_JSON";
-	return "PALANTIR_ERROR";
+	return "NORN_ERROR";
 }

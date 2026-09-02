@@ -1,8 +1,8 @@
-import type { PalantirWorkflowDefinition } from "palantir";
+import type { NornWorkflowDefinition } from "norn";
 import { reviewParamsSchema } from "./schema.ts";
 
 export const reviewWorkflow = {
 	isEntrypoint: false,
 	description: "Review the current repository boundary changes.",
 	params: reviewParamsSchema,
-} as const satisfies PalantirWorkflowDefinition;
+} as const satisfies NornWorkflowDefinition;

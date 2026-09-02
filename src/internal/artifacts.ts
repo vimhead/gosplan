@@ -1,16 +1,16 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import type { PalantirWorkflowArtifactRef } from "../api.ts";
+import type { NornWorkflowArtifactRef } from "../api.ts";
 
-export class PalantirArtifacts {
+export class NornArtifacts {
 	constructor(private readonly artifactsRoot: string) {}
 
-	async write(path: string, content: string): Promise<PalantirWorkflowArtifactRef> {
+	async write(path: string, content: string): Promise<NornWorkflowArtifactRef> {
 		await writeTextFile(this.resolveArtifactPath(path), content);
 		return { path };
 	}
 
-	async read(ref: PalantirWorkflowArtifactRef): Promise<string> {
+	async read(ref: NornWorkflowArtifactRef): Promise<string> {
 		return readFile(this.resolveArtifactPath(ref.path), "utf8");
 	}
 

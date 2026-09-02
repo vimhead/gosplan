@@ -1,5 +1,5 @@
 {
-  "name": "palantir",
+  "name": "norn",
   "version": "0.1.0",
   "description": "Daemonless JSON-native workflow runtime for coding agents.",
   "type": "module",
@@ -12,11 +12,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vimhead/palantir.git"
+    "url": "git+https://github.com/vimhead/norn.git"
   },
-  "homepage": "https://github.com/vimhead/palantir#readme",
+  "homepage": "https://github.com/vimhead/norn#readme",
   "bugs": {
-    "url": "https://github.com/vimhead/palantir/issues"
+    "url": "https://github.com/vimhead/norn/issues"
   },
   "engines": {
     "node": ">=22.19.0"
@@ -36,7 +36,7 @@
     "./examples/worktree-development-loop": "./examples/worktree-development-loop/plugin.ts"
   },
   "bin": {
-    "palantir": "./bin/palantir.mjs"
+    "norn": "./bin/norn.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.4",
@@ -58,7 +58,7 @@
     "release:dry": "npm run build:cli && npm pack --dry-run",
     "release:pack": "npm run build:cli && npm pack",
     "pack:dry": "npm run release:dry",
-    "build:binary": "npm run check && bun build --compile ./src/bun/cli.ts --outfile dist/palantir",
+    "build:binary": "npm run check && bun build --compile ./src/bun/cli.ts --outfile dist/norn",
     "release:binary": "npm run build:binary"
   }
 }

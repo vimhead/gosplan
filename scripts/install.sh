@@ -2,7 +2,7 @@
 set -eu
 
 die() {
-	printf 'palantir install: %s\n' "$*" >&2
+	printf 'norn install: %s\n' "$*" >&2
 	exit 1
 }
 
@@ -10,15 +10,15 @@ command_exists() {
 	command -v "$1" >/dev/null 2>&1
 }
 
-repository="${PALANTIR_REPOSITORY:-vimhead/palantir}"
-release_tag="${PALANTIR_RELEASE_TAG:-tip}"
-binary_name="${PALANTIR_BINARY_NAME:-palantir}"
-base_url="${PALANTIR_RELEASE_BASE_URL:-https://github.com/$repository/releases/download/$release_tag}"
+repository="${NORN_REPOSITORY:-vimhead/norn}"
+release_tag="${NORN_RELEASE_TAG:-tip}"
+binary_name="${NORN_BINARY_NAME:-norn}"
+base_url="${NORN_RELEASE_BASE_URL:-https://github.com/$repository/releases/download/$release_tag}"
 
-if [ -n "${PALANTIR_INSTALL_DIR:-}" ]; then
-	install_dir="$PALANTIR_INSTALL_DIR"
+if [ -n "${NORN_INSTALL_DIR:-}" ]; then
+	install_dir="$NORN_INSTALL_DIR"
 else
-	[ -n "${HOME:-}" ] || die "HOME is required when PALANTIR_INSTALL_DIR is unset"
+	[ -n "${HOME:-}" ] || die "HOME is required when NORN_INSTALL_DIR is unset"
 	install_dir="$HOME/.local/bin"
 fi
 
@@ -37,9 +37,9 @@ detect_asset_name() {
 		*) die "unsupported architecture: $machine" ;;
 	esac
 	if [ "$platform" = "windows" ]; then
-		printf 'palantir-%s-%s.exe' "$platform" "$arch"
+		printf 'norn-%s-%s.exe' "$platform" "$arch"
 	else
-		printf 'palantir-%s-%s' "$platform" "$arch"
+		printf 'norn-%s-%s' "$platform" "$arch"
 	fi
 }
 
@@ -79,14 +79,14 @@ install_binary() {
 	source_path="$1"
 	target_path="$install_dir/$binary_name"
 	mkdir -p "$install_dir"
-	temporary_target="$install_dir/.palantir-install-$$"
+	temporary_target="$install_dir/.norn-install-$$"
 	cp "$source_path" "$temporary_target"
 	chmod 0755 "$temporary_target"
 	mv "$temporary_target" "$target_path"
-	printf 'palantir installed to %s\n' "$target_path"
+	printf 'norn installed to %s\n' "$target_path"
 	case ":$PATH:" in
 		*:"$install_dir":*) ;;
-		*) printf 'add %s to PATH if palantir is not found\n' "$install_dir" ;;
+		*) printf 'add %s to PATH if norn is not found\n' "$install_dir" ;;
 	esac
 }
 

@@ -1,8 +1,8 @@
-import { PALANTIR_GENERATED_BUILD_INFO } from "./generated-build-info.ts";
+import { NORN_GENERATED_BUILD_INFO } from "./generated-build-info.ts";
 
-export type PalantirBuildInfo = PalantirUnknownBuildInfo | PalantirNpmGitGlobalBuildInfo | PalantirGithubReleaseBinaryBuildInfo;
+export type NornBuildInfo = NornUnknownBuildInfo | NornNpmGitGlobalBuildInfo | NornGithubReleaseBinaryBuildInfo;
 
-export type PalantirUnknownBuildInfo = {
+export type NornUnknownBuildInfo = {
 	readonly kind: "unknown";
 	readonly version: string;
 	readonly commit: string | null;
@@ -12,7 +12,7 @@ export type PalantirUnknownBuildInfo = {
 	};
 };
 
-export type PalantirNpmGitGlobalBuildInfo = {
+export type NornNpmGitGlobalBuildInfo = {
 	readonly kind: "npm-git-global";
 	readonly version: string;
 	readonly commit: string | null;
@@ -21,7 +21,7 @@ export type PalantirNpmGitGlobalBuildInfo = {
 	readonly upgradeCommand: readonly string[];
 };
 
-export type PalantirGithubReleaseBinaryBuildInfo = {
+export type NornGithubReleaseBinaryBuildInfo = {
 	readonly kind: "github-release-binary";
 	readonly version: string;
 	readonly commit: string | null;
@@ -31,4 +31,4 @@ export type PalantirGithubReleaseBinaryBuildInfo = {
 	readonly checksumAssetName: string;
 };
 
-export const PALANTIR_BUILD_INFO: PalantirBuildInfo = PALANTIR_GENERATED_BUILD_INFO;
+export const NORN_BUILD_INFO: NornBuildInfo = NORN_GENERATED_BUILD_INFO;

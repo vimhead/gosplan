@@ -2,6 +2,6 @@ export {
 	assertSeerModeWritablePath,
 	isSeerModeWritablePath,
 	resolveSeerModeConfig,
-	type PalantirResolvedSeerModeConfig,
-	type PalantirSeerModeConfig,
+	type NornResolvedSeerModeConfig,
+	type NornSeerModeConfig,
 } from "./config.ts";

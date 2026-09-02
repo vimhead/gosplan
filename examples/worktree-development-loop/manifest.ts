@@ -1,4 +1,4 @@
-import { definePluginManifest } from "palantir";
+import { definePluginManifest } from "norn";
 import { developmentLoopState, implementationState, planningState, reviewState } from "./state.ts";
 import { developmentLoopWorkflow } from "./workflows/development-loop/declaration.ts";
 import { developmentLoopConfigSchema } from "./workflows/development-loop/schema.ts";

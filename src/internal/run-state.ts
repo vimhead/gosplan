@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import type { PalantirRunHealth, PalantirRunStatus, PalantirRunOutcomeMetadata, PalantirRunInfo, PalantirRunInterruption, PalantirRunOutcomeInfo, PalantirRunFailureInfo } from "../api.ts";
+import type { NornRunHealth, NornRunStatus, NornRunOutcomeMetadata, NornRunInfo, NornRunInterruption, NornRunOutcomeInfo, NornRunFailureInfo } from "../api.ts";
 import { isNodeError } from "./errors.ts";
 import { readRunLaunchRequest } from "./launch-request.ts";
 import { getRunLeaseHealth } from "./run-lease.ts";
@@ -11,7 +11,7 @@ export const RUN_STATE_FILE_NAME = "run-state.json";
 const LEGACY_RUN_STATE_FILE_NAME = "runtime-state.json";
 const RUN_STATE_VERSION = 1;
 
-type PalantirRunWorkflowStep = {
+type NornRunWorkflowStep = {
 	readonly workflowId: string;
 	readonly params: unknown;
 	readonly cwd: string;
@@ -25,63 +25,63 @@ type RuntimeInterruption = {
 	readonly fields?: readonly string[];
 };
 
-type PalantirRunWorkflowCompletion = {
+type NornRunWorkflowCompletion = {
 	readonly workflowId: string;
 	readonly completedAt: string;
 	readonly outcome: { readonly type: "next"; readonly workflowId: string } | { readonly type: "complete" } | { readonly type: "fail" };
 };
 
-type PalantirRunWorkflowFailure = {
+type NornRunWorkflowFailure = {
 	readonly workflowId: string;
 	readonly error: string;
-	readonly metadata?: PalantirRunOutcomeMetadata;
+	readonly metadata?: NornRunOutcomeMetadata;
 	readonly failedAt: string;
 };
 
-type PalantirRunWorkflowOutcome = {
+type NornRunWorkflowOutcome = {
 	readonly workflowId: string;
 	readonly completedAt: string;
 	readonly status: "completed" | "failed";
-	readonly metadata?: PalantirRunOutcomeMetadata;
+	readonly metadata?: NornRunOutcomeMetadata;
 };
 
-export type PalantirRunState = {
+export type NornRunState = {
 	readonly version: typeof RUN_STATE_VERSION;
 	readonly id: string;
 	readonly name: string;
 	readonly entrypointWorkflowId: string;
 	readonly workspace: string;
 	readonly configOverride?: unknown;
-	readonly status: PalantirRunStatus;
-	readonly current: PalantirRunWorkflowStep | null;
-	readonly lastCompleted: PalantirRunWorkflowCompletion | null;
-	readonly outcome: PalantirRunWorkflowOutcome | null;
-	readonly failed: PalantirRunWorkflowFailure | null;
+	readonly status: NornRunStatus;
+	readonly current: NornRunWorkflowStep | null;
+	readonly lastCompleted: NornRunWorkflowCompletion | null;
+	readonly outcome: NornRunWorkflowOutcome | null;
+	readonly failed: NornRunWorkflowFailure | null;
 	readonly startedAt: string;
 	readonly updatedAt: string;
 };
 
-type CreatePalantirRunStateInput = {
+type CreateNornRunStateInput = {
 	readonly id: string;
 	readonly name: string;
 	readonly entrypointWorkflowId: string;
 	readonly workspace: string;
 	readonly configOverride?: unknown;
-	readonly current: PalantirRunWorkflowStep;
+	readonly current: NornRunWorkflowStep;
 	readonly startedAt: string;
 };
 
-export class PalantirRunStateStore {
+export class NornRunStateStore {
 	private writeChain: Promise<void> = Promise.resolve();
 
 	private constructor(
 		private readonly path: string,
-		private state: PalantirRunState,
+		private state: NornRunState,
 	) {}
 
-	static async create(runRoot: string, input: CreatePalantirRunStateInput): Promise<PalantirRunStateStore> {
+	static async create(runRoot: string, input: CreateNornRunStateInput): Promise<NornRunStateStore> {
 		const now = input.startedAt;
-		const state: PalantirRunState = {
+		const state: NornRunState = {
 			version: RUN_STATE_VERSION,
 			id: input.id,
 			name: input.name,
@@ -96,26 +96,26 @@ export class PalantirRunStateStore {
 			startedAt: now,
 			updatedAt: now,
 		};
-		const store = new PalantirRunStateStore(join(runCurrentRoot(runRoot), RUN_STATE_FILE_NAME), state);
+		const store = new NornRunStateStore(join(runCurrentRoot(runRoot), RUN_STATE_FILE_NAME), state);
 		await store.write();
 		return store;
 	}
 
-	static async load(runRoot: string): Promise<PalantirRunStateStore> {
+	static async load(runRoot: string): Promise<NornRunStateStore> {
 		const currentRoot = runCurrentRoot(runRoot);
-		const state = parsePalantirRunState(await readRunStateJson(currentRoot));
-		return new PalantirRunStateStore(join(currentRoot, RUN_STATE_FILE_NAME), state);
+		const state = parseNornRunState(await readRunStateJson(currentRoot));
+		return new NornRunStateStore(join(currentRoot, RUN_STATE_FILE_NAME), state);
 	}
 
-	currentState(): PalantirRunState {
+	currentState(): NornRunState {
 		return this.state;
 	}
 
-	async startStep(step: PalantirRunWorkflowStep): Promise<void> {
+	async startStep(step: NornRunWorkflowStep): Promise<void> {
 		await this.update({ status: "running", current: step, outcome: null, failed: null });
 	}
 
-	async completeWithNext(completedWorkflowId: string, next: PalantirRunWorkflowStep): Promise<void> {
+	async completeWithNext(completedWorkflowId: string, next: NornRunWorkflowStep): Promise<void> {
 		await this.update({
 			status: "running",
 			current: next,
@@ -125,7 +125,7 @@ export class PalantirRunStateStore {
 		});
 	}
 
-	async completeRun(workflowId: string, metadata: PalantirRunOutcomeMetadata | undefined): Promise<void> {
+	async completeRun(workflowId: string, metadata: NornRunOutcomeMetadata | undefined): Promise<void> {
 		const completedAt = new Date().toISOString();
 		await this.update({
 			status: "completed",
@@ -136,7 +136,7 @@ export class PalantirRunStateStore {
 		});
 	}
 
-	async failRun(workflowId: string, metadata: PalantirRunOutcomeMetadata & { readonly summary: string }): Promise<void> {
+	async failRun(workflowId: string, metadata: NornRunOutcomeMetadata & { readonly summary: string }): Promise<void> {
 		const failedAt = new Date().toISOString();
 		await this.update({
 			status: "failed",
@@ -167,7 +167,7 @@ export class PalantirRunStateStore {
 		});
 	}
 
-	async failCurrent(errorOrMetadata: string | PalantirRunOutcomeMetadata & { readonly summary: string }): Promise<void> {
+	async failCurrent(errorOrMetadata: string | NornRunOutcomeMetadata & { readonly summary: string }): Promise<void> {
 		if (!this.state.current) throw new Error("Cannot fail run without current step");
 		const failedAt = new Date().toISOString();
 		const metadata = typeof errorOrMetadata === "string" ? { summary: errorOrMetadata } : errorOrMetadata;
@@ -178,7 +178,7 @@ export class PalantirRunStateStore {
 		});
 	}
 
-	private async update(patch: Partial<PalantirRunState>): Promise<void> {
+	private async update(patch: Partial<NornRunState>): Promise<void> {
 		this.state = { ...this.state, ...patch, updatedAt: new Date().toISOString() };
 		await this.write();
 	}
@@ -189,8 +189,8 @@ export class PalantirRunStateStore {
 	}
 }
 
-export async function listRuns(sessionCwd: string): Promise<PalantirRunInfo[]> {
-	const runsRoot = join(sessionCwd, ".palantir", "runs");
+export async function listRuns(sessionCwd: string): Promise<NornRunInfo[]> {
+	const runsRoot = join(sessionCwd, ".norn", "runs");
 	let entries;
 	try {
 		entries = await readdir(runsRoot, { withFileTypes: true });
@@ -199,13 +199,13 @@ export async function listRuns(sessionCwd: string): Promise<PalantirRunInfo[]> {
 		throw error;
 	}
 
-	const runs = await Promise.all(entries.filter((entry) => entry.isDirectory()).map((entry) => readPalantirRunInfo(resolve(runsRoot, entry.name))));
-	return runs.filter((run): run is PalantirRunInfo => run !== undefined).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+	const runs = await Promise.all(entries.filter((entry) => entry.isDirectory()).map((entry) => readNornRunInfo(resolve(runsRoot, entry.name))));
+	return runs.filter((run): run is NornRunInfo => run !== undefined).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
-export async function getRunInfo(runRoot: string): Promise<PalantirRunInfo> {
+export async function getRunInfo(runRoot: string): Promise<NornRunInfo> {
 	try {
-		const state = parsePalantirRunState(await readRunStateJson(runCurrentRoot(runRoot)));
+		const state = parseNornRunState(await readRunStateJson(runCurrentRoot(runRoot)));
 		return {
 			version: state.version,
 			id: state.id,
@@ -230,7 +230,7 @@ export async function getRunInfo(runRoot: string): Promise<PalantirRunInfo> {
 export async function resolveRunRoot(sessionCwd: string, run: string): Promise<string> {
 	for (const candidate of runRootCandidates(sessionCwd, run)) {
 		try {
-			if (await readPalantirRunInfo(candidate)) return candidate;
+			if (await readNornRunInfo(candidate)) return candidate;
 		} catch (error) {
 			if (!isNodeError(error) && (!(error instanceof Error) || !error.message.includes("run state"))) throw error;
 		}
@@ -244,17 +244,17 @@ export async function resolveRunRoot(sessionCwd: string, run: string): Promise<s
 
 function runRootCandidates(sessionCwd: string, run: string): string[] {
 	const candidates = [isAbsolute(run) ? run : resolve(sessionCwd, run)];
-	if (!isAbsolute(run)) candidates.push(resolve(sessionCwd, ".palantir", "runs", run));
+	if (!isAbsolute(run)) candidates.push(resolve(sessionCwd, ".norn", "runs", run));
 	return Array.from(new Set(candidates));
 }
 
-async function runHealth(runRoot: string, status: PalantirRunStatus): Promise<PalantirRunHealth> {
+async function runHealth(runRoot: string, status: NornRunStatus): Promise<NornRunHealth> {
 	if (status === "failed") return "unhealthy";
 	if (status !== "running") return "healthy";
 	return getRunLeaseHealth(runRoot);
 }
 
-async function readPalantirRunInfo(runRoot: string): Promise<PalantirRunInfo | undefined> {
+async function readNornRunInfo(runRoot: string): Promise<NornRunInfo | undefined> {
 	try {
 		return await getRunInfo(runRoot);
 	} catch (error) {
@@ -263,7 +263,7 @@ async function readPalantirRunInfo(runRoot: string): Promise<PalantirRunInfo | u
 	}
 }
 
-async function getLaunchedRunInfo(runRoot: string): Promise<PalantirRunInfo> {
+async function getLaunchedRunInfo(runRoot: string): Promise<NornRunInfo> {
 	const launchRequest = await readRunLaunchRequest(runRoot);
 	return {
 		version: launchRequest.version,
@@ -288,9 +288,9 @@ async function readRunStateJson(currentRoot: string): Promise<unknown> {
 	}
 }
 
-function parsePalantirRunState(value: unknown): PalantirRunState {
+function parseNornRunState(value: unknown): NornRunState {
 	if (!value || typeof value !== "object") throw new Error("Invalid run state");
-	const state = value as Partial<PalantirRunState> & { rootWorkflowId?: unknown };
+	const state = value as Partial<NornRunState> & { rootWorkflowId?: unknown };
 	if (state.version !== RUN_STATE_VERSION) throw new Error(`Unsupported run state version: ${String(state.version)}`);
 	if (typeof state.id !== "string" || state.id.length === 0) throw new Error("Invalid run state id");
 	const normalizedState = state as { name?: string; entrypointWorkflowId?: unknown; rootWorkflowId?: unknown };
@@ -299,19 +299,19 @@ function parsePalantirRunState(value: unknown): PalantirRunState {
 	if (typeof state.entrypointWorkflowId !== "string" || state.entrypointWorkflowId.length === 0) throw new Error("Invalid run state entrypoint workflow id");
 	if (typeof state.workspace !== "string" || state.workspace.length === 0) throw new Error("Invalid run state workspace");
 	if (state.status !== "running" && state.status !== "interrupted" && state.status !== "completed" && state.status !== "failed") throw new Error("Invalid run state status");
-	if (state.status === "interrupted") assertInterruptedPalantirRunState(state);
+	if (state.status === "interrupted") assertInterruptedNornRunState(state);
 	if (typeof state.startedAt !== "string" || typeof state.updatedAt !== "string") throw new Error("Invalid run state timestamps");
-	return state as PalantirRunState;
+	return state as NornRunState;
 }
 
-function assertInterruptedPalantirRunState(state: Partial<PalantirRunState>): void {
+function assertInterruptedNornRunState(state: Partial<NornRunState>): void {
 	if (!state.current) throw new Error("Invalid interrupted run current step");
 	const interruption = state.current.interruption;
 	if (!interruption || interruption.status !== "pending") throw new Error("Invalid run interruption");
 	if (typeof interruption.description !== "string" || interruption.description.length === 0) throw new Error("Invalid run interruption description");
 }
 
-function runInterruption(state: PalantirRunState): PalantirRunInterruption | undefined {
+function runInterruption(state: NornRunState): NornRunInterruption | undefined {
 	if (state.status !== "interrupted" || !state.current?.interruption) return undefined;
 	return {
 		workflowId: state.current.workflowId,
@@ -321,10 +321,10 @@ function runInterruption(state: PalantirRunState): PalantirRunInterruption | und
 	};
 }
 
-function runOutcome(state: PalantirRunState): PalantirRunOutcomeInfo | undefined {
+function runOutcome(state: NornRunState): NornRunOutcomeInfo | undefined {
 	return state.outcome ?? undefined;
 }
 
-function runFailure(state: PalantirRunState): PalantirRunFailureInfo | undefined {
+function runFailure(state: NornRunState): NornRunFailureInfo | undefined {
 	return state.failed ?? undefined;
 }

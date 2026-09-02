@@ -1,6 +1,6 @@
 # Workspace development loop example
 
-A minimal Palantir workflow plugin for one Git repository.
+A minimal Norn workflow plugin for one Git repository.
 
 It registers an entrypoint workflow named **Workspace development loop**. The
 workflow:
@@ -52,13 +52,13 @@ Best practices shown:
 - runs finish explicitly with `run.complete(...)` or
   `run.fail(...)`;
 - final details are persisted as small outcome metadata pointing to artifacts;
-- the workspace may contain a nested `.git/` because Palantir snapshots with CAS.
+- the workspace may contain a nested `.git/` because Norn snapshots with CAS.
 
-Set `config.worktreeDevelopmentLoop.repositoryRoot` in `palantir.project.json`
+Set `config.worktreeDevelopmentLoop.repositoryRoot` in `norn.project.json`
 to the repository you want the workflow to clone.
 
 ```bash
-palantir project inspect
-palantir workflows inspect worktreeDevelopmentLoop.developmentLoop
-printf '{"params":{"task":"Add tests"}}' | palantir runs start worktreeDevelopmentLoop.developmentLoop
+norn project inspect
+norn workflows inspect worktreeDevelopmentLoop.developmentLoop
+printf '{"params":{"task":"Add tests"}}' | norn runs start worktreeDevelopmentLoop.developmentLoop
 ```

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { workflowArtifactRefSchema } from "palantir";
+import { workflowArtifactRefSchema } from "norn";
 import { reviewDecisionSchema } from "../review/schema.ts";
 
 export const reviewRouterParamsSchema = z.object({

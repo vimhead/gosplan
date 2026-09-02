@@ -1,25 +1,25 @@
 import { spawn } from "node:child_process";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { WriteStream } from "node:fs";
-import type { PalantirCommandRunInput, PalantirCommandRunResult, PalantirLogRef } from "../api.ts";
+import type { NornCommandRunInput, NornCommandRunResult, NornLogRef } from "../api.ts";
 import { errorMessage } from "./errors.ts";
 import { safeFileName } from "./file-names.ts";
-import type { PalantirRunLogs } from "./logs.ts";
-import type { PalantirRunLogger } from "./run-log.ts";
+import type { NornRunLogs } from "./logs.ts";
+import type { NornRunLogger } from "./run-log.ts";
 
-type PalantirCommandRunnerInput = {
+type NornCommandRunnerInput = {
 	readonly boundaryRoot: string;
 	readonly boundaryName: string;
 	readonly cwd: string;
 	readonly signal?: AbortSignal;
-	readonly logs: PalantirRunLogs;
-	readonly logger: PalantirRunLogger;
+	readonly logs: NornRunLogs;
+	readonly logger: NornRunLogger;
 };
 
-export class PalantirCommandRunner {
-	constructor(private readonly input: PalantirCommandRunnerInput) {}
+export class NornCommandRunner {
+	constructor(private readonly input: NornCommandRunnerInput) {}
 
-	async run(commandInput: PalantirCommandRunInput): Promise<PalantirCommandRunResult> {
+	async run(commandInput: NornCommandRunInput): Promise<NornCommandRunResult> {
 		const cwd = this.resolveFromCwd(commandInput.cwd ?? this.input.cwd);
 		const startedAtMs = Date.now();
 		await this.input.logger.record({ type: "command.started", label: commandInput.label, command: commandInput.command, cwd });
@@ -144,7 +144,7 @@ async function spawnCommand(input: SpawnCommandInput): Promise<SpawnCommandResul
 	});
 }
 
-function commandLog(label: string, stream: "stdout" | "stderr"): PalantirLogRef {
+function commandLog(label: string, stream: "stdout" | "stderr"): NornLogRef {
 	return { id: `commands/${safeFileName(label)}.${stream}` };
 }
 

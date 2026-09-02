@@ -1,8 +1,8 @@
-import type { PalantirRunNext, PalantirRun } from "palantir";
+import type { NornRunNext, NornRun } from "norn";
 import { worktreeDevelopmentLoopManifest } from "../../manifest.ts";
 import { planningAgentResponseSchema, type PlanningParams } from "./schema.ts";
 
-export async function executePlanningWorkflow(run: PalantirRun, params: PlanningParams): Promise<PalantirRunNext> {
+export async function executePlanningWorkflow(run: NornRun, params: PlanningParams): Promise<NornRunNext> {
 	const repositoryPath = await run.state.get(worktreeDevelopmentLoopManifest.states.developmentLoop.repositoryPath);
 	const agent = await run.agents.run({
 		label: "planning",

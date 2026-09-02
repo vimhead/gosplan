@@ -1,33 +1,33 @@
-# palantir
+# norn
 
 Typed, resumable workflow plugins for coding agents.
 
-`palantir` owns the workflow API and daemonless run engine. The engine is executed
-through the JSON-native `palantir` CLI; host applications embed `palantir/client`,
+`norn` owns the workflow API and daemonless run engine. The engine is executed
+through the JSON-native `norn` CLI; host applications embed `norn/client`,
 not the scheduler.
 
 ```bash
-npm install github:vimhead/palantir
+npm install github:vimhead/norn
 ```
 
 Install the native CLI from the rolling GitHub `tip` release:
 
 ```bash
-curl -fsSL https://github.com/vimhead/palantir/releases/download/tip/install.sh | sh
-palantir project inspect
+curl -fsSL https://github.com/vimhead/norn/releases/download/tip/install.sh | sh
+norn project inspect
 ```
 
-Set `PALANTIR_INSTALL_DIR` to choose the destination:
+Set `NORN_INSTALL_DIR` to choose the destination:
 
 ```bash
-curl -fsSL https://github.com/vimhead/palantir/releases/download/tip/install.sh | PALANTIR_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://github.com/vimhead/norn/releases/download/tip/install.sh | NORN_INSTALL_DIR=/usr/local/bin sh
 ```
 
 Install the public GitHub CLI globally with npm:
 
 ```bash
-npm install -g github:vimhead/palantir
-palantir project inspect
+npm install -g github:vimhead/norn
+norn project inspect
 ```
 
 Build a downloadable npm tarball for GitHub Releases:
@@ -43,26 +43,26 @@ Build a self-contained native CLI for the current platform:
 
 ```bash
 npm run release:binary
-cp dist/palantir /usr/local/bin/palantir
-palantir project inspect
+cp dist/norn /usr/local/bin/norn
+norn project inspect
 ```
 
 The native binary uses Bun at build time and does not require Node at runtime.
 Every successful `Test` workflow run on `main` updates the rolling GitHub
-prerelease tagged `tip` with `install.sh`, `palantir-tip.tgz`, platform
+prerelease tagged `tip` with `install.sh`, `norn-tip.tgz`, platform
 binaries, per-asset `.sha256` files, and `SHA256SUMS.txt`. Release binaries embed
-explicit build metadata for `palantir version` and `palantir upgrade`.
+explicit build metadata for `norn version` and `norn upgrade`.
 
 ## Features
 
 - Typed plugin manifests and executable plugins.
-- Project discovery through `palantir.project.json`.
-- Reusable workflow/plugin discovery through included `palantir.json` files.
-- Detached workflow execution with `palantir execute-run <run-id>`.
+- Project discovery through `norn.project.json`.
+- Reusable workflow/plugin discovery through included `norn.json` files.
+- Detached workflow execution with `norn execute-run <run-id>`.
 - JSON command output and NDJSON log/event streams.
 - Human-readable run names such as `quiet-river-lantern`.
 - Explicit workflow controls: `run.next`, `run.complete`, `run.fail`.
-- Resumable runs under `<project-root>/.palantir/runs/<run-id>`.
+- Resumable runs under `<project-root>/.norn/runs/<run-id>`.
 - CAS checkpoints for rollback and resume.
 - Workflow isolation through `runWorkspace` and `project` modes.
 - Typed state, artifacts, command logs, and Pi SDK agent calls.
@@ -73,36 +73,36 @@ explicit build metadata for `palantir version` and `palantir upgrade`.
 Initialize a project root:
 
 ```bash
-palantir project init
+norn project init
 ```
 
-`palantir project init` creates `palantir.project.json` and `.palantir/runs/` in
-the current directory. Palantir discovers projects by walking upward to the
-nearest `palantir.project.json`; reusable `palantir.json` files are loaded only
+`norn project init` creates `norn.project.json` and `.norn/runs/` in
+the current directory. Norn discovers projects by walking upward to the
+nearest `norn.project.json`; reusable `norn.json` files are loaded only
 when the project includes them.
 
 Create a reusable workflow config:
 
 ```json
 {
-  "plugins": ["./palantir/plugin.ts"]
+  "plugins": ["./norn/plugin.ts"]
 }
 ```
 
-Include it from `palantir.project.json` and keep project-specific plugin config
+Include it from `norn.project.json` and keep project-specific plugin config
 there:
 
 ```json
 {
   "version": 1,
-  "includes": ["./palantir.json"],
+  "includes": ["./norn.json"],
   "config": {
     "example": {}
   }
 }
 ```
 
-Plugin paths are resolved relative to the included `palantir.json`. Project
+Plugin paths are resolved relative to the included `norn.json`. Project
 config is keyed by plugin id and validated against each plugin manifest config
 schema. Each plugin module must default-export the plugin.
 
@@ -112,12 +112,12 @@ includes:
 ```json
 {
   "version": 1,
-  "includes": ["./packages/*/palantir.json"]
+  "includes": ["./packages/*/norn.json"]
 }
 ```
 
 Included configs can declare their own `plugins` and `includes`. `*` matches one
-directory segment; Palantir does not perform blind downward scanning.
+directory segment; Norn does not perform blind downward scanning.
 
 ## Examples
 
@@ -126,20 +126,20 @@ The repository includes runnable examples under `examples/`, including
 
 ```bash
 cd examples/worktree-development-loop
-palantir project inspect
-palantir workflows inspect worktreeDevelopmentLoop.developmentLoop
+norn project inspect
+norn workflows inspect worktreeDevelopmentLoop.developmentLoop
 ```
 
 ## Seer mode config
 
-Projects can declare a Seer mode write boundary in `palantir.project.json`.
-Palantir resolves each writable root relative to the project root and rejects
+Projects can declare a Seer mode write boundary in `norn.project.json`.
+Norn resolves each writable root relative to the project root and rejects
 roots that escape the project root.
 
 ```json
 {
   "version": 1,
-  "includes": ["./packages/workflows/palantir.json"],
+  "includes": ["./packages/workflows/norn.json"],
   "seerMode": {
     "writableRoots": ["./workflow-sources"]
   }
@@ -149,7 +149,7 @@ roots that escape the project root.
 Inspect the resolved config with:
 
 ```bash
-palantir seer inspect
+norn seer inspect
 ```
 
 ## Define workflows
@@ -159,13 +159,13 @@ qualified id.
 
 ```ts
 import { z } from "zod";
-import type { PalantirWorkflowDefinition } from "palantir";
+import type { NornWorkflowDefinition } from "norn";
 
 export const planWorkflow = {
   title: "Plan",
   isEntrypoint: true,
   params: z.object({ task: z.string() }),
-} as const satisfies PalantirWorkflowDefinition;
+} as const satisfies NornWorkflowDefinition;
 ```
 
 Explicit ids are allowed only when fully qualified with the plugin id.
@@ -176,7 +176,7 @@ export const legacyWorkflow = {
   title: "Plan",
   isEntrypoint: true,
   params,
-} as const satisfies PalantirWorkflowDefinition;
+} as const satisfies NornWorkflowDefinition;
 ```
 
 ## Define a manifest
@@ -184,7 +184,7 @@ export const legacyWorkflow = {
 State leaves can be raw Zod schemas. State ids are derived from the tree path.
 
 ```ts
-import { definePluginManifest, workflowArtifactRefSchema } from "palantir";
+import { definePluginManifest, workflowArtifactRefSchema } from "norn";
 import { z } from "zod";
 import { planWorkflow } from "./workflows/plan.ts";
 
@@ -208,7 +208,7 @@ manifest.states.planning.planArtifact.id; // "example.planning.planArtifact"
 ## Bind implementations
 
 ```ts
-import { definePlugin } from "palantir";
+import { definePlugin } from "norn";
 import { manifest } from "./manifest.ts";
 
 export default definePlugin(manifest, {
@@ -244,11 +244,11 @@ export const implementWorkflow = {
   isEntrypoint: false,
   params,
   isolation: { mode: "runWorkspace" },
-} as const satisfies PalantirWorkflowDefinition;
+} as const satisfies NornWorkflowDefinition;
 ```
 
 Use `project` isolation for workflows that intentionally inspect or verify files
-inside the Palantir project root. Project-isolated implementations receive
+inside the Norn project root. Project-isolated implementations receive
 project-only helpers at the type level.
 
 ```ts
@@ -257,9 +257,9 @@ export const verifyWorkflow = {
   isEntrypoint: true,
   params,
   isolation: { mode: "project" },
-} as const satisfies PalantirWorkflowDefinition;
+} as const satisfies NornWorkflowDefinition;
 
-async function execute(run: PalantirProjectRun) {
+async function execute(run: NornProjectRun) {
   await run.commands.run({
     label: "test",
     cwd: run.projectPath("packages/app"),
@@ -293,41 +293,41 @@ use it as a table of contents for artifacts, logs, and state.
 The CLI is JSON-native except for concise human-readable `help` output.
 
 ```bash
-palantir help
+norn help
 
-palantir help runs start
+norn help runs start
 
-palantir commands list
+norn commands list
 
-palantir commands inspect runs.start
+norn commands inspect runs.start
 
-palantir version
+norn version
 
-palantir upgrade --dry-run
+norn upgrade --dry-run
 
-palantir project inspect
+norn project inspect
 
-palantir workflows list
+norn workflows list
 
-palantir workflows list --all
+norn workflows list --all
 
-palantir workflows inspect example.plan
+norn workflows inspect example.plan
 
-echo '{"params":{"task":"Add tests"}}' | palantir runs start example.plan
+echo '{"params":{"task":"Add tests"}}' | norn runs start example.plan
 
-palantir runs list
+norn runs list
 
-palantir runs wait quiet-river-lantern
+norn runs wait quiet-river-lantern
 
-palantir runs logs quiet-river-lantern --follow
+norn runs logs quiet-river-lantern --follow
 
-palantir runs metrics quiet-river-lantern
+norn runs metrics quiet-river-lantern
 
-palantir runs stop quiet-river-lantern
+norn runs stop quiet-river-lantern
 
-palantir runs delete quiet-river-lantern
+norn runs delete quiet-river-lantern
 
-echo '{"params":{"decision":"accept"}}' | palantir runs resume quiet-river-lantern
+echo '{"params":{"decision":"accept"}}' | norn runs resume quiet-river-lantern
 ```
 
 `help` and `--help` return concise human-readable command help. `commands list` and `commands inspect <id>` return JSON with agent-oriented command descriptions, usage, inputs, outputs, and examples. `version` returns the package version and a discriminated `build` object. Builds without explicit upgrade metadata use `build.kind: "unknown"`, and `upgrade` returns an unsupported JSON result instead of guessing the install source.
@@ -338,9 +338,9 @@ Use `runs wait` to block until a run is no longer active; it returns the same ru
 ## TypeScript client
 
 ```ts
-import { createPalantirClient } from "palantir/client";
+import { createNornClient } from "norn/client";
 
-const client = createPalantirClient({ spawnCwd: process.cwd() });
+const client = createNornClient({ spawnCwd: process.cwd() });
 const workflows = await client.workflows.list();
 const run = await client.runs.start({
   workflowId: "example.plan",
@@ -371,7 +371,7 @@ export const reviewRouterWorkflow = {
     fields: ["decision", "notes"] as const,
   },
   params: reviewRouterParamsSchema,
-} as const satisfies PalantirWorkflowDefinition;
+} as const satisfies NornWorkflowDefinition;
 ```
 
 Dynamic gate descriptions live in the implementation and are persisted when the
@@ -394,7 +394,7 @@ reviewRouter: {
 Each run is split into immutable CAS storage and the current materialized state.
 
 ```text
-.palantir/runs/<run-id>/
+.norn/runs/<run-id>/
   active.lock/
     owner.json
   store/

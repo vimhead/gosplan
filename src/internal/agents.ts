@@ -11,23 +11,23 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import type { PalantirAgentInitialEvent, PalantirAgentPromptInput, PalantirAgentRunInput, PalantirAgentRunRawAttempt, PalantirAgentRunResult, PalantirAgentSessionEvents, PalantirAgentSpawnInput, PalantirAgentSession, PalantirAgentUsage } from "../api.ts";
+import type { NornAgentInitialEvent, NornAgentPromptInput, NornAgentRunInput, NornAgentRunRawAttempt, NornAgentRunResult, NornAgentSessionEvents, NornAgentSpawnInput, NornAgentSession, NornAgentUsage } from "../api.ts";
 import {
 	AGENT_RESPONSE_TOOL_NAME,
-	PalantirAgentResponseCollector,
-	PalantirAgentResponseToolFactory,
-	type PalantirCapturedAgentResponse,
+	NornAgentResponseCollector,
+	NornAgentResponseToolFactory,
+	type NornCapturedAgentResponse,
 } from "./agent-response-tool.ts";
 import { errorMessage } from "./errors.ts";
-import type { PalantirRunLogs } from "./logs.ts";
+import type { NornRunLogs } from "./logs.ts";
 import { safeFileName } from "./file-names.ts";
-import type { PalantirRunLogger } from "./run-log.ts";
+import type { NornRunLogger } from "./run-log.ts";
 import { agentUsageFromValue, emptyAgentUsage, totalAgentUsage } from "./usage.ts";
 
 const DEFAULT_AGENT_ATTEMPTS = 3;
 const DEFAULT_AGENT_TOOL_ALLOWLIST = ["read", "bash", "edit", "write", AGENT_RESPONSE_TOOL_NAME] as const;
 
-type PalantirAgentRunnerInput = {
+type NornAgentRunnerInput = {
 	readonly id: string;
 	readonly runRoot: string;
 	readonly boundaryRoot: string;
@@ -37,26 +37,26 @@ type PalantirAgentRunnerInput = {
 	readonly model?: CreateAgentSessionOptions["model"];
 	readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
 	readonly agentDir?: string;
-	readonly logs: PalantirRunLogs;
-	readonly logger: PalantirRunLogger;
-	readonly responseCollector: PalantirAgentResponseCollector;
+	readonly logs: NornRunLogs;
+	readonly logger: NornRunLogger;
+	readonly responseCollector: NornAgentResponseCollector;
 };
 
-type SpawnedPalantirAgentSessionInput = PalantirAgentRunnerInput & {
+type SpawnedNornAgentSessionInput = NornAgentRunnerInput & {
 	readonly label: string;
 	readonly cwd: string;
 	readonly session: AgentSession;
-	readonly events: PalantirAgentSessionEvents;
+	readonly events: NornAgentSessionEvents;
 };
 
-export class PalantirAgentRunner {
-	private readonly responseToolFactory: PalantirAgentResponseToolFactory;
+export class NornAgentRunner {
+	private readonly responseToolFactory: NornAgentResponseToolFactory;
 
-	constructor(private readonly input: PalantirAgentRunnerInput) {
-		this.responseToolFactory = new PalantirAgentResponseToolFactory(input.responseCollector);
+	constructor(private readonly input: NornAgentRunnerInput) {
+		this.responseToolFactory = new NornAgentResponseToolFactory(input.responseCollector);
 	}
 
-	async spawn(agentInput: PalantirAgentSpawnInput): Promise<PalantirAgentSession> {
+	async spawn(agentInput: NornAgentSpawnInput): Promise<NornAgentSession> {
 		const cwd = agentInput.cwd ? this.resolveFromCwd(agentInput.cwd) : this.input.cwd;
 		const sessionDir = resolve(this.input.runRoot, "sessions");
 		await mkdir(sessionDir, { recursive: true });
@@ -78,7 +78,7 @@ export class PalantirAgentRunner {
 		await bindExtensionsForInitialEvents(session, agentInput.initialEvents);
 
 		await this.input.logger.record({ type: "agent.spawned", label: agentInput.label, cwd });
-		return new SpawnedPalantirAgentSession({
+		return new SpawnedNornAgentSession({
 			...this.input,
 			label: agentInput.label,
 			cwd,
@@ -87,7 +87,7 @@ export class PalantirAgentRunner {
 		});
 	}
 
-	async run<ResponseSchema extends z.ZodType>(agentInput: PalantirAgentRunInput<ResponseSchema>): Promise<PalantirAgentRunResult<ResponseSchema>> {
+	async run<ResponseSchema extends z.ZodType>(agentInput: NornAgentRunInput<ResponseSchema>): Promise<NornAgentRunResult<ResponseSchema>> {
 		const agent = await this.spawn(agentInput);
 		try {
 			return await agent.run(agentInput);
@@ -106,22 +106,22 @@ export class PalantirAgentRunner {
 	}
 }
 
-class SpawnedPalantirAgentSession implements PalantirAgentSession {
+class SpawnedNornAgentSession implements NornAgentSession {
 	readonly label: string;
 	readonly cwd: string;
-	readonly events: PalantirAgentSessionEvents;
+	readonly events: NornAgentSessionEvents;
 	private isDisposed = false;
 
-	constructor(private readonly input: SpawnedPalantirAgentSessionInput) {
+	constructor(private readonly input: SpawnedNornAgentSessionInput) {
 		this.label = input.label;
 		this.cwd = input.cwd;
 		this.events = input.events;
 	}
 
-	async run<ResponseSchema extends z.ZodType>(agentInput: PalantirAgentPromptInput<ResponseSchema>): Promise<PalantirAgentRunResult<ResponseSchema>> {
+	async run<ResponseSchema extends z.ZodType>(agentInput: NornAgentPromptInput<ResponseSchema>): Promise<NornAgentRunResult<ResponseSchema>> {
 		if (this.isDisposed) throw new Error(`Workflow agent session is disposed: ${this.label}`);
 		const maxAttempts = Math.max(1, Math.floor(agentInput.maxAttempts ?? DEFAULT_AGENT_ATTEMPTS));
-		const attempts: PalantirAgentRunRawAttempt[] = [];
+		const attempts: NornAgentRunRawAttempt[] = [];
 		const startedAtMs = Date.now();
 		let isTerminalEventRecorded = false;
 		await this.input.logger.record({ type: "agent.started", label: this.label, cwd: this.cwd, maxAttempts });
@@ -130,14 +130,14 @@ class SpawnedPalantirAgentSession implements PalantirAgentSession {
 			for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 				await this.input.logger.record({ type: "agent.attempt.started", label: this.label, attempt });
 				const raw = await this.runAttempt(agentInput, attempt, attempts.at(-1)?.error);
-				const rawAttempt: PalantirAgentRunRawAttempt = { attempt, ...raw };
+				const rawAttempt: NornAgentRunRawAttempt = { attempt, ...raw };
 				attempts.push(rawAttempt);
 
 				try {
 					if (!raw.responseToolCalled) throw new Error(`Agent did not call ${AGENT_RESPONSE_TOOL_NAME}`);
 					const response = agentInput.response.parse(raw.toolResponse);
 					const usage = totalAgentUsage(attempts.map((candidate) => candidate.usage));
-					const result: PalantirAgentRunResult<ResponseSchema> = {
+					const result: NornAgentRunResult<ResponseSchema> = {
 						label: this.label,
 						cwd: this.cwd,
 						response,
@@ -191,10 +191,10 @@ class SpawnedPalantirAgentSession implements PalantirAgentSession {
 	}
 
 	private async runAttempt<ResponseSchema extends z.ZodType>(
-		agentInput: PalantirAgentPromptInput<ResponseSchema>,
+		agentInput: NornAgentPromptInput<ResponseSchema>,
 		attempt: number,
 		previousError: string | undefined,
-	): Promise<Omit<PalantirAgentRunRawAttempt, "attempt" | "error">> {
+	): Promise<Omit<NornAgentRunRawAttempt, "attempt" | "error">> {
 		const responseRunId = `${this.input.id}:${attempt}:${randomUUID()}`;
 		const messages: unknown[] = [];
 		let text = "";
@@ -210,7 +210,7 @@ class SpawnedPalantirAgentSession implements PalantirAgentSession {
 		};
 		this.input.signal?.addEventListener("abort", abortNestedSession, { once: true });
 
-		let capturedResponse: PalantirCapturedAgentResponse = { called: false };
+		let capturedResponse: NornCapturedAgentResponse = { called: false };
 		try {
 			this.input.signal?.throwIfAborted();
 			await this.input.session.prompt(withResponseToolInstruction(agentInput.prompt, agentInput.response, this.label, responseRunId, attempt, previousError), {
@@ -235,22 +235,22 @@ class SpawnedPalantirAgentSession implements PalantirAgentSession {
 	}
 }
 
-function emitInitialEvents(eventBus: PalantirAgentSessionEvents, events: readonly PalantirAgentInitialEvent[] | undefined): void {
+function emitInitialEvents(eventBus: NornAgentSessionEvents, events: readonly NornAgentInitialEvent[] | undefined): void {
 	for (const event of events ?? []) {
 		eventBus.emit(event.name, event.data);
 	}
 }
 
-async function bindExtensionsForInitialEvents(session: AgentSession, events: readonly PalantirAgentInitialEvent[] | undefined): Promise<void> {
+async function bindExtensionsForInitialEvents(session: AgentSession, events: readonly NornAgentInitialEvent[] | undefined): Promise<void> {
 	if ((events?.length ?? 0) === 0) return;
 	await session.bindExtensions({});
 }
 
-function usageFromMessages(messages: readonly unknown[]): PalantirAgentUsage {
-	return totalAgentUsage(messages.map(usageFromMessage).filter((usage): usage is PalantirAgentUsage => usage !== undefined));
+function usageFromMessages(messages: readonly unknown[]): NornAgentUsage {
+	return totalAgentUsage(messages.map(usageFromMessage).filter((usage): usage is NornAgentUsage => usage !== undefined));
 }
 
-function usageFromMessage(message: unknown): PalantirAgentUsage | undefined {
+function usageFromMessage(message: unknown): NornAgentUsage | undefined {
 	if (!message || typeof message !== "object" || !("usage" in message)) return undefined;
 	return agentUsageFromValue((message as { usage?: unknown }).usage) ?? emptyAgentUsage();
 }

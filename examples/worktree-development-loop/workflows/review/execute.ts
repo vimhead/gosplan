@@ -1,9 +1,9 @@
-import type { PalantirRunNext, PalantirRun } from "palantir";
+import type { NornRunNext, NornRun } from "norn";
 import { worktreeDevelopmentLoopManifest } from "../../manifest.ts";
 import { ensureCommandSucceeded } from "../../shared/commands.ts";
 import { reviewAgentResponseSchema, type ReviewParams } from "./schema.ts";
 
-export async function executeReviewWorkflow(run: PalantirRun, params: ReviewParams): Promise<PalantirRunNext> {
+export async function executeReviewWorkflow(run: NornRun, params: ReviewParams): Promise<NornRunNext> {
 	const repositoryPath = await run.state.get(worktreeDevelopmentLoopManifest.states.developmentLoop.repositoryPath);
 	const planArtifact = await run.state.get(worktreeDevelopmentLoopManifest.states.planning.planArtifact);
 	const implementationSummary = await run.state.get(worktreeDevelopmentLoopManifest.states.implementation.implementationSummary);

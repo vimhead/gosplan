@@ -5,74 +5,74 @@ import { createJiti } from "jiti/static";
 import * as typeboxModule from "typebox";
 import { z } from "zod";
 import * as zodModule from "zod";
-import * as palantirApiModule from "./api.ts";
-import * as palantirModule from "./index.ts";
-import * as palantirSchemaModule from "./schema.ts";
-import * as palantirSeerModule from "./seer/index.ts";
-import { isWorkflowPlugin, type PalantirJsonSchema, type PalantirProjectPluginInfo, type PalantirWorkflowPlugin, type PalantirWorkflowPluginInfo } from "./api.ts";
+import * as nornApiModule from "./api.ts";
+import * as nornModule from "./index.ts";
+import * as nornSchemaModule from "./schema.ts";
+import * as nornSeerModule from "./seer/index.ts";
+import { isWorkflowPlugin, type NornJsonSchema, type NornProjectPluginInfo, type NornWorkflowPlugin, type NornWorkflowPluginInfo } from "./api.ts";
 import { isNodeError } from "./internal/errors.ts";
-import { PalantirMemoryWorkflowState } from "./internal/state-store.ts";
-import { PalantirWorkflowRegistry, type PalantirRegisteredWorkflow } from "./internal/workflow-registry.ts";
+import { NornMemoryWorkflowState } from "./internal/state-store.ts";
+import { NornWorkflowRegistry, type NornRegisteredWorkflow } from "./internal/workflow-registry.ts";
 import { schemaType, unwrapSchema } from "./schema.ts";
-import { resolveSeerModeConfig, type PalantirResolvedSeerModeConfig } from "./seer/index.ts";
+import { resolveSeerModeConfig, type NornResolvedSeerModeConfig } from "./seer/index.ts";
 
-export const PALANTIR_PROJECT_FILE_NAME = "palantir.project.json";
-export const PALANTIR_CONFIG_FILE_NAME = "palantir.json";
+export const NORN_PROJECT_FILE_NAME = "norn.project.json";
+export const NORN_CONFIG_FILE_NAME = "norn.json";
 
 const seerModeConfigSchema = z.object({
 	writableRoots: z.array(z.string().min(1)).min(1),
 });
-const palantirConfigSchema = z.object({
+const nornConfigSchema = z.object({
 	plugins: z.array(z.string().min(1)).default([]),
 	includes: z.array(z.string().min(1)).default([]),
 	config: z.record(z.string(), z.unknown()).default({}),
 });
-const palantirProjectConfigSchema = z.object({
+const nornProjectConfigSchema = z.object({
 	version: z.literal(1).default(1),
 	includes: z.array(z.string().min(1)).default([]),
 	config: z.record(z.string(), z.unknown()).default({}),
 	seerMode: seerModeConfigSchema.optional(),
 });
 
-type PalantirConfig = z.output<typeof palantirConfigSchema> & { readonly seerMode?: never };
-type PalantirProjectConfig = z.output<typeof palantirProjectConfigSchema>;
+type NornConfig = z.output<typeof nornConfigSchema> & { readonly seerMode?: never };
+type NornProjectConfig = z.output<typeof nornProjectConfigSchema>;
 
-type PalantirConfigFile = {
+type NornConfigFile = {
 	readonly path: string;
 	readonly root: string;
-	readonly config: PalantirConfig;
+	readonly config: NornConfig;
 };
 
-export type PalantirProject = {
+export type NornProject = {
 	readonly cwd: string;
 	readonly projectPath: string;
 	readonly projectRoot: string;
 	readonly configPath: string;
 	readonly configRoot: string;
-	readonly config: PalantirProjectConfig;
-	readonly configFiles: readonly PalantirConfigFile[];
+	readonly config: NornProjectConfig;
+	readonly configFiles: readonly NornConfigFile[];
 	readonly projectConfig: Record<string, unknown>;
-	readonly seerMode?: PalantirResolvedSeerModeConfig;
+	readonly seerMode?: NornResolvedSeerModeConfig;
 };
 
-export type PalantirLoadedProject = PalantirProject & {
-	readonly plugins: readonly PalantirWorkflowPlugin[];
-	readonly pluginInfos: readonly PalantirProjectPluginInfo[];
-	readonly registry: PalantirWorkflowRegistry;
-	readonly workflows: readonly PalantirRegisteredWorkflow[];
-	readonly state: PalantirMemoryWorkflowState;
+export type NornLoadedProject = NornProject & {
+	readonly plugins: readonly NornWorkflowPlugin[];
+	readonly pluginInfos: readonly NornProjectPluginInfo[];
+	readonly registry: NornWorkflowRegistry;
+	readonly workflows: readonly NornRegisteredWorkflow[];
+	readonly state: NornMemoryWorkflowState;
 };
 
-type LoadedPalantirWorkflowPlugin = {
-	readonly plugin: PalantirWorkflowPlugin;
-	readonly info: PalantirProjectPluginInfo;
+type LoadedNornWorkflowPlugin = {
+	readonly plugin: NornWorkflowPlugin;
+	readonly info: NornProjectPluginInfo;
 };
 
-export async function loadPalantirProject(cwd: string): Promise<PalantirLoadedProject> {
-	const project = await findPalantirProject(cwd);
+export async function loadNornProject(cwd: string): Promise<NornLoadedProject> {
+	const project = await findNornProject(cwd);
 	const loadedPlugins = await loadWorkflowPlugins(project);
-	const registry = new PalantirWorkflowRegistry();
-	const state = new PalantirMemoryWorkflowState();
+	const registry = new NornWorkflowRegistry();
+	const state = new NornMemoryWorkflowState();
 	for (const { plugin, info } of loadedPlugins) {
 		const implementation = typeof plugin.implementation === "function"
 			? plugin.implementation({ cwd: project.cwd, state })
@@ -86,10 +86,10 @@ export async function loadPalantirProject(cwd: string): Promise<PalantirLoadedPr
 	return { ...project, plugins: loadedPlugins.map(({ plugin }) => plugin), pluginInfos: loadedPlugins.map(({ info }) => info), registry, workflows: registry.launchableEntries(), state };
 }
 
-export async function findPalantirProject(cwd: string): Promise<PalantirProject> {
-	const projectPath = await findNearestPalantirProject(cwd);
-	const projectRootConfig = await readPalantirProjectConfigFile(projectPath);
-	const configFiles = await loadIncludedPalantirConfigFiles(projectRootConfig, new Set());
+export async function findNornProject(cwd: string): Promise<NornProject> {
+	const projectPath = await findNearestNornProject(cwd);
+	const projectRootConfig = await readNornProjectConfigFile(projectPath);
+	const configFiles = await loadIncludedNornConfigFiles(projectRootConfig, new Set());
 	return {
 		cwd: resolve(cwd),
 		projectPath: projectRootConfig.path,
@@ -103,10 +103,10 @@ export async function findPalantirProject(cwd: string): Promise<PalantirProject>
 	};
 }
 
-async function findNearestPalantirProject(cwd: string): Promise<string> {
+async function findNearestNornProject(cwd: string): Promise<string> {
 	let current = resolve(cwd);
 	while (true) {
-		const projectPath = join(current, PALANTIR_PROJECT_FILE_NAME);
+		const projectPath = join(current, NORN_PROJECT_FILE_NAME);
 		try {
 			await access(projectPath);
 			return projectPath;
@@ -114,48 +114,48 @@ async function findNearestPalantirProject(cwd: string): Promise<string> {
 			if (!isNodeError(error) || error.code !== "ENOENT") throw error;
 		}
 		const parent = dirname(current);
-		if (parent === current) throw new Error(`Could not find ${PALANTIR_PROJECT_FILE_NAME} from ${cwd}`);
+		if (parent === current) throw new Error(`Could not find ${NORN_PROJECT_FILE_NAME} from ${cwd}`);
 		current = parent;
 	}
 }
 
-type PalantirProjectConfigFile = {
+type NornProjectConfigFile = {
 	readonly path: string;
 	readonly root: string;
-	readonly config: PalantirProjectConfig;
+	readonly config: NornProjectConfig;
 };
 
-async function loadIncludedPalantirConfigFiles(projectFile: PalantirProjectConfigFile, visitedPaths: Set<string>): Promise<PalantirConfigFile[]> {
+async function loadIncludedNornConfigFiles(projectFile: NornProjectConfigFile, visitedPaths: Set<string>): Promise<NornConfigFile[]> {
 	const includedConfigFiles = await Promise.all(projectFile.config.includes.map(async (includePath) => {
 		const configPaths = await expandIncludePath(projectFile.root, includePath);
-		return Promise.all(configPaths.map(readPalantirConfigFile));
+		return Promise.all(configPaths.map(readNornConfigFile));
 	}));
-	const descendants = await Promise.all(includedConfigFiles.flat().map((includedConfigFile) => loadPalantirConfigTree(includedConfigFile, visitedPaths)));
+	const descendants = await Promise.all(includedConfigFiles.flat().map((includedConfigFile) => loadNornConfigTree(includedConfigFile, visitedPaths)));
 	return [projectConfigFile(projectFile), ...descendants.flat()];
 }
 
-async function loadPalantirConfigTree(configFile: PalantirConfigFile, visitedPaths: Set<string>): Promise<PalantirConfigFile[]> {
+async function loadNornConfigTree(configFile: NornConfigFile, visitedPaths: Set<string>): Promise<NornConfigFile[]> {
 	if (visitedPaths.has(configFile.path)) return [];
 	visitedPaths.add(configFile.path);
 	const includedConfigFiles = await Promise.all(configFile.config.includes.map(async (includePath) => {
 		const configPaths = await expandIncludePath(configFile.root, includePath);
-		return Promise.all(configPaths.map(readPalantirConfigFile));
+		return Promise.all(configPaths.map(readNornConfigFile));
 	}));
-	const descendants = await Promise.all(includedConfigFiles.flat().map((includedConfigFile) => loadPalantirConfigTree(includedConfigFile, visitedPaths)));
+	const descendants = await Promise.all(includedConfigFiles.flat().map((includedConfigFile) => loadNornConfigTree(includedConfigFile, visitedPaths)));
 	return [configFile, ...descendants.flat()];
 }
 
-async function readPalantirProjectConfigFile(path: string): Promise<PalantirProjectConfigFile> {
-	const config = palantirProjectConfigSchema.parse(JSON.parse(await readFile(path, "utf8")));
+async function readNornProjectConfigFile(path: string): Promise<NornProjectConfigFile> {
+	const config = nornProjectConfigSchema.parse(JSON.parse(await readFile(path, "utf8")));
 	return { path, root: dirname(path), config };
 }
 
-async function readPalantirConfigFile(path: string): Promise<PalantirConfigFile> {
-	const config = palantirConfigSchema.parse(JSON.parse(await readFile(path, "utf8")));
+async function readNornConfigFile(path: string): Promise<NornConfigFile> {
+	const config = nornConfigSchema.parse(JSON.parse(await readFile(path, "utf8")));
 	return { path, root: dirname(path), config };
 }
 
-function projectConfigFile(projectFile: PalantirProjectConfigFile): PalantirConfigFile {
+function projectConfigFile(projectFile: NornProjectConfigFile): NornConfigFile {
 	return {
 		path: projectFile.path,
 		root: projectFile.root,
@@ -167,19 +167,19 @@ function projectConfigFile(projectFile: PalantirProjectConfigFile): PalantirConf
 	};
 }
 
-async function loadWorkflowPlugins(project: PalantirProject): Promise<LoadedPalantirWorkflowPlugin[]> {
-	const plugins: LoadedPalantirWorkflowPlugin[] = [];
+async function loadWorkflowPlugins(project: NornProject): Promise<LoadedNornWorkflowPlugin[]> {
+	const plugins: LoadedNornWorkflowPlugin[] = [];
 	const pluginIds = new Set<string>();
 	for (const configFile of project.configFiles) {
-		const jiti = createJiti(pathToFileURL(configFile.path).href, { moduleCache: false, virtualModules: palantirWorkflowVirtualModules() });
+		const jiti = createJiti(pathToFileURL(configFile.path).href, { moduleCache: false, virtualModules: nornWorkflowVirtualModules() });
 		for (const pluginPath of configFile.config.plugins) {
 			const resolvedPluginPath = resolveConfigPath(configFile.root, pluginPath);
 			const module = await jiti.import(pathToFileURL(resolvedPluginPath).href) as { default?: unknown };
-			if (!isWorkflowPlugin(module.default)) throw new Error(`Palantir plugin must be the default export: ${resolvedPluginPath}`);
-			if (pluginIds.has(module.default.manifest.id)) throw new Error(`Duplicate Palantir plugin id: ${module.default.manifest.id}`);
+			if (!isWorkflowPlugin(module.default)) throw new Error(`Norn plugin must be the default export: ${resolvedPluginPath}`);
+			if (pluginIds.has(module.default.manifest.id)) throw new Error(`Duplicate Norn plugin id: ${module.default.manifest.id}`);
 			pluginIds.add(module.default.manifest.id);
 			const configInput = project.projectConfig[module.default.manifest.id];
-			if (!module.default.manifest.config && configInput !== undefined) throw new Error(`Palantir config provided for plugin without config schema: ${module.default.manifest.id}`);
+			if (!module.default.manifest.config && configInput !== undefined) throw new Error(`Norn config provided for plugin without config schema: ${module.default.manifest.id}`);
 			const config = module.default.manifest.config ? module.default.manifest.config.parse(defaultConfigInput(module.default.manifest.config, configInput)) : undefined;
 			plugins.push({
 				plugin: module.default,
@@ -187,7 +187,7 @@ async function loadWorkflowPlugins(project: PalantirProject): Promise<LoadedPala
 					id: module.default.manifest.id,
 					path: resolvedPluginPath,
 					configPath: configFile.path,
-					configSchema: module.default.manifest.config ? z.toJSONSchema(module.default.manifest.config, { io: "input" }) as PalantirJsonSchema : null,
+					configSchema: module.default.manifest.config ? z.toJSONSchema(module.default.manifest.config, { io: "input" }) as NornJsonSchema : null,
 					config,
 				},
 			});
@@ -196,22 +196,22 @@ async function loadWorkflowPlugins(project: PalantirProject): Promise<LoadedPala
 	return plugins;
 }
 
-function workflowPluginInfo(info: PalantirProjectPluginInfo): PalantirWorkflowPluginInfo {
+function workflowPluginInfo(info: NornProjectPluginInfo): NornWorkflowPluginInfo {
 	return { id: info.id, path: info.path, configPath: info.configPath };
 }
 
-function palantirWorkflowVirtualModules(): Record<string, unknown> {
+function nornWorkflowVirtualModules(): Record<string, unknown> {
 	return {
-		palantir: palantirModule,
-		"palantir/api": palantirApiModule,
-		"palantir/schema": palantirSchemaModule,
-		"palantir/seer": palantirSeerModule,
+		norn: nornModule,
+		"norn/api": nornApiModule,
+		"norn/schema": nornSchemaModule,
+		"norn/seer": nornSeerModule,
 		typebox: typeboxModule,
 		zod: zodModule,
 	};
 }
 
-function mergeProjectConfig(configFiles: readonly PalantirConfigFile[]): Record<string, unknown> {
+function mergeProjectConfig(configFiles: readonly NornConfigFile[]): Record<string, unknown> {
 	const [projectFile, ...reusableConfigFiles] = configFiles;
 	let reusableConfig: Record<string, unknown> = {};
 	for (const configFile of reusableConfigFiles) {
@@ -233,7 +233,7 @@ function mergeReusableConfigObjects(base: Record<string, unknown>, override: Rec
 function mergeReusableConfigValue(base: unknown, override: unknown, path: readonly string[]): unknown {
 	if (isPlainObject(base) && isPlainObject(override)) return mergeReusableConfigObjects(base, override, path);
 	if (JSON.stringify(base) === JSON.stringify(override)) return base;
-	throw new Error(`Conflicting Palantir reusable config at ${path.join(".")}`);
+	throw new Error(`Conflicting Norn reusable config at ${path.join(".")}`);
 }
 
 function mergeProjectConfigObjects(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
@@ -276,7 +276,7 @@ async function expandGlobSegments(root: string, segments: readonly string[]): Pr
 }
 
 function resolveConfigPath(configRoot: string, path: string): string {
-	if (path.length === 0) throw new Error("Palantir path must not be empty");
+	if (path.length === 0) throw new Error("Norn path must not be empty");
 	return isAbsolute(path) ? path : resolve(configRoot, path);
 }
 

@@ -1,12 +1,12 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { z } from "zod";
-import type { PalantirDispose } from "../api.ts";
+import type { NornDispose } from "../api.ts";
 import { zodErrorMessage } from "./errors.ts";
 
 export const AGENT_RESPONSE_TOOL_NAME = "pi_workflows_agent_response";
 
-export type PalantirCapturedAgentResponse = {
+export type NornCapturedAgentResponse = {
 	readonly called: boolean;
 	readonly response?: unknown;
 };
@@ -26,10 +26,10 @@ type AgentResponseToolDetails = {
 	readonly response?: unknown;
 };
 
-export class PalantirAgentResponseCollector {
+export class NornAgentResponseCollector {
 	private readonly pending = new Map<string, PendingAgentResponse>();
 
-	begin(runId: string, label: string, responseSchema: z.ZodType): PalantirDispose {
+	begin(runId: string, label: string, responseSchema: z.ZodType): NornDispose {
 		this.pending.set(runId, { label, responseSchema, called: false });
 		return () => this.pending.delete(runId);
 	}
@@ -48,22 +48,22 @@ export class PalantirAgentResponseCollector {
 		return { label: pending.label, response: parsed.data };
 	}
 
-	get(runId: string): PalantirCapturedAgentResponse {
+	get(runId: string): NornCapturedAgentResponse {
 		const pending = this.pending.get(runId);
 		return pending ? { called: pending.called, response: pending.response } : { called: false };
 	}
 }
 
-export class PalantirAgentResponseToolFactory {
-	constructor(private readonly responseCollector: PalantirAgentResponseCollector) {}
+export class NornAgentResponseToolFactory {
+	constructor(private readonly responseCollector: NornAgentResponseCollector) {}
 
 	create(): ToolDefinition {
 		const responseCollector = this.responseCollector;
 		return defineTool({
 			name: AGENT_RESPONSE_TOOL_NAME,
 			label: "Workflow Agent Response",
-			description: "Record the final structured response for a Palantir nested agent run.",
-			promptSnippet: "Record a final structured response for Palantir agent automation",
+			description: "Record the final structured response for a Norn nested agent run.",
+			promptSnippet: "Record a final structured response for Norn agent automation",
 			promptGuidelines: [
 				`Use ${AGENT_RESPONSE_TOOL_NAME} as your final action when a workflow prompt gives you a workflow response runId.`,
 				`After calling ${AGENT_RESPONSE_TOOL_NAME}, do not emit another assistant response in the same turn.`,

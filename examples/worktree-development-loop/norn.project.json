@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "includes": ["./palantir.json"],
+  "includes": ["./norn.json"],
   "config": {
     "worktreeDevelopmentLoop": {
       "repositoryRoot": "."

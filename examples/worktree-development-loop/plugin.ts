@@ -1,4 +1,4 @@
-import { definePlugin } from "palantir";
+import { definePlugin } from "norn";
 import { worktreeDevelopmentLoopManifest } from "./manifest.ts";
 import { executeDevelopmentLoopWorkflow } from "./workflows/development-loop/index.ts";
 import { executeImplementationWorkflow } from "./workflows/implementation/index.ts";

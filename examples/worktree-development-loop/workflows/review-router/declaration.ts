@@ -1,4 +1,4 @@
-import type { PalantirWorkflowDefinition } from "palantir";
+import type { NornWorkflowDefinition } from "norn";
 import { reviewRouterParamsSchema } from "./schema.ts";
 
 export const reviewRouterWorkflow = {
@@ -9,4 +9,4 @@ export const reviewRouterWorkflow = {
 		fields: ["decision", "summary"] as const,
 	},
 	params: reviewRouterParamsSchema,
-} as const satisfies PalantirWorkflowDefinition;
+} as const satisfies NornWorkflowDefinition;

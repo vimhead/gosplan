@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { workflowArtifactRefSchema } from "palantir";
+import { workflowArtifactRefSchema } from "norn";
 
 export const reviewDecisionSchema = z.enum(["accept", "revise", "blocked"]);
 

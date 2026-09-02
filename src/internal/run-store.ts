@@ -4,7 +4,7 @@ import { access, chmod, lstat, mkdir, readFile, readdir, readlink, rename, rm, s
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
-import type { PalantirRunCheckpoint } from "../api.ts";
+import type { NornRunCheckpoint } from "../api.ts";
 import { isNodeError } from "./errors.ts";
 import { writeJsonAtomically } from "./json-file.ts";
 
@@ -19,7 +19,7 @@ export function runCurrentRoot(runRoot: string): string {
 	return join(runRoot, CURRENT_DIR_NAME);
 }
 
-export class PalantirRunStore {
+export class NornRunStore {
 	private readonly currentRoot: string;
 	private readonly storeRoot: string;
 
@@ -28,8 +28,8 @@ export class PalantirRunStore {
 		this.storeRoot = join(runRoot, STORE_DIR_NAME);
 	}
 
-	static async initialize(root: string): Promise<PalantirRunStore> {
-		const runStore = new PalantirRunStore(root);
+	static async initialize(root: string): Promise<NornRunStore> {
+		const runStore = new NornRunStore(root);
 		await mkdir(runStore.currentRoot, { recursive: true });
 		await mkdir(runStore.objectsRoot, { recursive: true });
 		await mkdir(runStore.snapshotsRoot, { recursive: true });
@@ -37,8 +37,8 @@ export class PalantirRunStore {
 		return runStore;
 	}
 
-	static async open(root: string): Promise<PalantirRunStore> {
-		const runStore = new PalantirRunStore(root);
+	static async open(root: string): Promise<NornRunStore> {
+		const runStore = new NornRunStore(root);
 		await access(runStore.currentRoot, constants.R_OK | constants.W_OK);
 		await access(runStore.storeRoot, constants.R_OK | constants.W_OK);
 		return runStore;
@@ -48,7 +48,7 @@ export class PalantirRunStore {
 		return readFile(this.currentRefPath, "utf8").then((value) => value.trim());
 	}
 
-	async snapshotCurrent(message: string): Promise<PalantirRunCheckpoint> {
+	async snapshotCurrent(message: string): Promise<NornRunCheckpoint> {
 		const checkpoint = await this.appendCheckpoint(message);
 		const snapshot = await this.createSnapshot(checkpoint);
 		await writeFile(this.currentRefPath, `${snapshot.id}\n`, "utf8");
@@ -65,9 +65,9 @@ export class PalantirRunStore {
 		await this.restoreSnapshotManifest(await this.readSnapshot(await this.currentSnapshotRef()));
 	}
 
-	async listCheckpoints(): Promise<PalantirRunCheckpoint[]> {
+	async listCheckpoints(): Promise<NornRunCheckpoint[]> {
 		try {
-			const checkpoints = parsePalantirRunCheckpoints(JSON.parse(await readFile(this.checkpointsPath, "utf8")));
+			const checkpoints = parseNornRunCheckpoints(JSON.parse(await readFile(this.checkpointsPath, "utf8")));
 			for (const checkpoint of checkpoints) this.assertCheckpointPathMatchesId(checkpoint);
 			return checkpoints;
 		} catch (error) {
@@ -98,10 +98,10 @@ export class PalantirRunStore {
 		return join(this.currentRoot, CHECKPOINTS_FILE_NAME);
 	}
 
-	private async appendCheckpoint(message: string): Promise<PalantirRunCheckpoint> {
+	private async appendCheckpoint(message: string): Promise<NornRunCheckpoint> {
 		const checkpoints = await this.listCheckpoints();
 		const id = `cp_${randomUUID().replaceAll("-", "")}`;
-		const checkpoint: PalantirRunCheckpoint = {
+		const checkpoint: NornRunCheckpoint = {
 			id,
 			path: this.snapshotRelativePath(id),
 			index: checkpoints.length + 1,
@@ -112,7 +112,7 @@ export class PalantirRunStore {
 		return checkpoint;
 	}
 
-	private async createSnapshot(checkpoint: PalantirRunCheckpoint): Promise<RunSnapshotManifest> {
+	private async createSnapshot(checkpoint: NornRunCheckpoint): Promise<RunSnapshotManifest> {
 		const entries = await this.snapshotEntries(this.currentRoot);
 		const snapshot: RunSnapshotManifest = {
 			version: SNAPSHOT_VERSION,
@@ -219,7 +219,7 @@ export class PalantirRunStore {
 		return relative(this.runRoot, this.snapshotPath(id));
 	}
 
-	private assertCheckpointPathMatchesId(checkpoint: PalantirRunCheckpoint): void {
+	private assertCheckpointPathMatchesId(checkpoint: NornRunCheckpoint): void {
 		const expectedPath = this.snapshotRelativePath(checkpoint.id);
 		if (checkpoint.path !== expectedPath) throw new Error(`Run checkpoint path does not match id: ${checkpoint.id}`);
 	}
@@ -264,19 +264,19 @@ function parseRunSnapshotManifest(value: unknown): RunSnapshotManifest {
 	return snapshot as RunSnapshotManifest;
 }
 
-function parsePalantirRunCheckpoints(value: unknown): PalantirRunCheckpoint[] {
+function parseNornRunCheckpoints(value: unknown): NornRunCheckpoint[] {
 	if (!Array.isArray(value)) throw new Error("Invalid run checkpoints");
-	return value.map(parsePalantirRunCheckpoint);
+	return value.map(parseNornRunCheckpoint);
 }
 
-function parsePalantirRunCheckpoint(value: unknown): PalantirRunCheckpoint {
+function parseNornRunCheckpoint(value: unknown): NornRunCheckpoint {
 	if (!value || typeof value !== "object") throw new Error("Invalid run checkpoint");
-	const checkpoint = value as Partial<PalantirRunCheckpoint>;
+	const checkpoint = value as Partial<NornRunCheckpoint>;
 	if (typeof checkpoint.id !== "string" || checkpoint.id.length === 0) throw new Error("Invalid run checkpoint id");
 	if (typeof checkpoint.path !== "string" || checkpoint.path.length === 0) throw new Error("Invalid run checkpoint path");
 	if (checkpoint.path.split(/[\\/]/).includes("..") || resolve(checkpoint.path) === checkpoint.path) throw new Error(`Invalid run checkpoint path: ${checkpoint.path}`);
 	if (typeof checkpoint.index !== "number" || !Number.isInteger(checkpoint.index) || checkpoint.index < 1) throw new Error("Invalid run checkpoint index");
 	if (typeof checkpoint.message !== "string") throw new Error("Invalid run checkpoint message");
 	if (typeof checkpoint.createdAt !== "string") throw new Error("Invalid run checkpoint timestamp");
-	return checkpoint as PalantirRunCheckpoint;
+	return checkpoint as NornRunCheckpoint;
 }

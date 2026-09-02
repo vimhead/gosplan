@@ -1,33 +1,33 @@
 import { z } from "zod";
-import { isWorkflowComplete, isWorkflowFail, isWorkflowNext, type PalantirAnyWorkflowDeclaration, type PalantirInspectedWorkflowInfo, type PalantirJsonSchema, type PalantirRegisteredWorkflowInfo, type PalantirRunComplete, type PalantirDispose, type PalantirRunFail, type PalantirWorkflowGateInfo, type PalantirWorkflowImplementation, type PalantirRunNext, type PalantirRunFor, type PalantirWorkflowParams, type PalantirWorkflowPluginInfo } from "../api.ts";
+import { isWorkflowComplete, isWorkflowFail, isWorkflowNext, type NornAnyWorkflowDeclaration, type NornInspectedWorkflowInfo, type NornJsonSchema, type NornRegisteredWorkflowInfo, type NornRunComplete, type NornDispose, type NornRunFail, type NornWorkflowGateInfo, type NornWorkflowImplementation, type NornRunNext, type NornRunFor, type NornWorkflowParams, type NornWorkflowPluginInfo } from "../api.ts";
 import { assertLaunchableWorkflow, isPlainObject, schemaShape, schemaType, unwrapSchema } from "../schema.ts";
 
-export type PalantirRegisteredWorkflow = {
-	workflow: PalantirAnyWorkflowDeclaration;
-	implementation: PalantirWorkflowImplementation<PalantirAnyWorkflowDeclaration, unknown>;
+export type NornRegisteredWorkflow = {
+	workflow: NornAnyWorkflowDeclaration;
+	implementation: NornWorkflowImplementation<NornAnyWorkflowDeclaration, unknown>;
 	configSchema?: z.ZodType;
 	config: unknown;
-	plugin?: PalantirWorkflowPluginInfo;
+	plugin?: NornWorkflowPluginInfo;
 };
 
-export type PalantirWorkflowStepResult =
-	| PalantirRunNext
-	| { readonly type: "complete"; readonly workflow: PalantirAnyWorkflowDeclaration; readonly metadata?: PalantirRunComplete["metadata"] }
-	| { readonly type: "fail"; readonly workflow: PalantirAnyWorkflowDeclaration; readonly metadata: PalantirRunFail["metadata"] };
+export type NornWorkflowStepResult =
+	| NornRunNext
+	| { readonly type: "complete"; readonly workflow: NornAnyWorkflowDeclaration; readonly metadata?: NornRunComplete["metadata"] }
+	| { readonly type: "fail"; readonly workflow: NornAnyWorkflowDeclaration; readonly metadata: NornRunFail["metadata"] };
 
-export class PalantirWorkflowRegistry {
-	private readonly entries = new Map<string, PalantirRegisteredWorkflow>();
+export class NornWorkflowRegistry {
+	private readonly entries = new Map<string, NornRegisteredWorkflow>();
 
-	register<TWorkflow extends PalantirAnyWorkflowDeclaration>(
+	register<TWorkflow extends NornAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
-		implementation: PalantirWorkflowImplementation<TWorkflow, unknown>,
-		metadata: { readonly plugin?: PalantirWorkflowPluginInfo; readonly configSchema?: z.ZodType; readonly config?: unknown } = {},
-	): PalantirDispose {
+		implementation: NornWorkflowImplementation<TWorkflow, unknown>,
+		metadata: { readonly plugin?: NornWorkflowPluginInfo; readonly configSchema?: z.ZodType; readonly config?: unknown } = {},
+	): NornDispose {
 		if (this.entries.has(workflow.id)) throw new Error(`Workflow already registered: ${workflow.id}`);
 
-		const entry: PalantirRegisteredWorkflow = {
+		const entry: NornRegisteredWorkflow = {
 			workflow,
-			implementation: implementation as PalantirWorkflowImplementation<PalantirAnyWorkflowDeclaration, unknown>,
+			implementation: implementation as NornWorkflowImplementation<NornAnyWorkflowDeclaration, unknown>,
 			configSchema: metadata.configSchema,
 			config: metadata.configSchema ? metadata.configSchema.parse(defaultConfigInput(metadata.configSchema, metadata.config)) : undefined,
 			plugin: metadata.plugin,
@@ -41,58 +41,58 @@ export class PalantirWorkflowRegistry {
 		};
 	}
 
-	list(options: { readonly entrypointsOnly?: boolean } = {}): PalantirRegisteredWorkflowInfo[] {
+	list(options: { readonly entrypointsOnly?: boolean } = {}): NornRegisteredWorkflowInfo[] {
 		const entries = options.entrypointsOnly ? this.launchableEntries() : this.sortedEntries();
 		return entries.map((entry) => workflowInfo(entry));
 	}
 
-	inspect(workflowId: string): PalantirInspectedWorkflowInfo | undefined {
+	inspect(workflowId: string): NornInspectedWorkflowInfo | undefined {
 		const entry = this.entries.get(workflowId);
 		return entry ? inspectedWorkflowInfo(entry) : undefined;
 	}
 
-	launchableEntries(): PalantirRegisteredWorkflow[] {
+	launchableEntries(): NornRegisteredWorkflow[] {
 		return this.sortedEntries().filter(({ workflow }) => workflow.isEntrypoint);
 	}
 
-	workflowById(workflowId: string): PalantirAnyWorkflowDeclaration | undefined {
+	workflowById(workflowId: string): NornAnyWorkflowDeclaration | undefined {
 		return this.entries.get(workflowId)?.workflow;
 	}
 
-	async describeGate<TWorkflow extends PalantirAnyWorkflowDeclaration>(
+	async describeGate<TWorkflow extends NornAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
-		run: PalantirRunFor<TWorkflow>,
+		run: NornRunFor<TWorkflow>,
 		params: unknown,
 		configOverride?: unknown,
 	): Promise<string> {
 		const entry = this.entries.get(workflow.id);
 		if (!entry) throw new Error(`Unknown workflow: ${workflow.id}`);
 		if (!workflow.gate) throw new Error(`Workflow is not gated: ${workflow.id}`);
-		const parsedParams = workflow.params.parse(params) as PalantirWorkflowParams<TWorkflow>;
+		const parsedParams = workflow.params.parse(params) as NornWorkflowParams<TWorkflow>;
 		const parsedConfig = parseExecutionConfig(entry, configOverride);
-		const description = await (entry.implementation as PalantirWorkflowImplementation<TWorkflow, unknown>).gate?.describe(run, parsedParams, parsedConfig);
+		const description = await (entry.implementation as NornWorkflowImplementation<TWorkflow, unknown>).gate?.describe(run, parsedParams, parsedConfig);
 		return validateGateDescription(description ?? defaultGateDescription(workflow), workflow.id);
 	}
 
-	async execute<TWorkflow extends PalantirAnyWorkflowDeclaration>(
+	async execute<TWorkflow extends NornAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
-		run: PalantirRunFor<TWorkflow>,
+		run: NornRunFor<TWorkflow>,
 		params: unknown,
 		configOverride?: unknown,
-	): Promise<PalantirWorkflowStepResult> {
+	): Promise<NornWorkflowStepResult> {
 		const entry = this.entries.get(workflow.id);
 		if (!entry) throw new Error(`Unknown workflow: ${workflow.id}`);
 
-		const parsedParams = workflow.params.parse(params) as Parameters<PalantirWorkflowImplementation<TWorkflow, unknown>["execute"]>[1];
+		const parsedParams = workflow.params.parse(params) as Parameters<NornWorkflowImplementation<TWorkflow, unknown>["execute"]>[1];
 		const parsedConfig = parseExecutionConfig(entry, configOverride);
-		const result = await (entry.implementation as PalantirWorkflowImplementation<TWorkflow, unknown>).execute(run, parsedParams, parsedConfig);
+		const result = await (entry.implementation as NornWorkflowImplementation<TWorkflow, unknown>).execute(run, parsedParams, parsedConfig);
 		if (isWorkflowNext(result)) return result;
 		if (isWorkflowComplete(result)) return { type: "complete", workflow, metadata: result.metadata };
 		if (isWorkflowFail(result)) return { type: "fail", workflow, metadata: result.metadata };
 		throw new Error(`Workflow returned invalid control result: ${workflow.id}`);
 	}
 
-	private sortedEntries(): PalantirRegisteredWorkflow[] {
+	private sortedEntries(): NornRegisteredWorkflow[] {
 		return Array.from(this.entries.values()).sort((left, right) =>
 			(left.workflow.title ?? left.workflow.id).localeCompare(right.workflow.title ?? right.workflow.id),
 		);
@@ -104,7 +104,7 @@ function defaultConfigInput(configSchema: z.ZodType, config: unknown): unknown {
 	return schemaType(unwrapSchema(configSchema)) === "object" ? {} : undefined;
 }
 
-function parseExecutionConfig(entry: PalantirRegisteredWorkflow, configOverride: unknown): unknown {
+function parseExecutionConfig(entry: NornRegisteredWorkflow, configOverride: unknown): unknown {
 	const pluginConfigOverride = pluginConfigOverrideInput(entry, configOverride);
 	if (!entry.configSchema) {
 		if (pluginConfigOverride !== undefined) throw new Error(`Run config override provided for plugin without config schema: ${entry.plugin?.id ?? entry.workflow.id}`);
@@ -117,7 +117,7 @@ function parseExecutionConfig(entry: PalantirRegisteredWorkflow, configOverride:
 	return entry.configSchema.parse(rawConfig);
 }
 
-function pluginConfigOverrideInput(entry: PalantirRegisteredWorkflow, configOverride: unknown): unknown {
+function pluginConfigOverrideInput(entry: NornRegisteredWorkflow, configOverride: unknown): unknown {
 	if (configOverride === undefined) return undefined;
 	if (!isPlainObject(configOverride)) throw new Error("Run config override must be an object keyed by plugin id");
 	const pluginId = entry.plugin?.id;
@@ -133,7 +133,7 @@ function deepMerge(base: Record<string, unknown>, override: Record<string, unkno
 	return result;
 }
 
-function assertGateWorkflow(workflow: PalantirAnyWorkflowDeclaration): void {
+function assertGateWorkflow(workflow: NornAnyWorkflowDeclaration): void {
 	if (!workflow.gate) return;
 	if (workflow.gate.enabled !== true) throw new Error(`Workflow gate must be enabled with true: ${workflow.id}`);
 	if (!workflow.gate.fields) return;
@@ -145,7 +145,7 @@ function assertGateWorkflow(workflow: PalantirAnyWorkflowDeclaration): void {
 	}
 }
 
-function defaultGateDescription(workflow: PalantirAnyWorkflowDeclaration): string {
+function defaultGateDescription(workflow: NornAnyWorkflowDeclaration): string {
 	return workflow.description ?? workflow.title ?? workflow.id;
 }
 
@@ -155,7 +155,7 @@ function validateGateDescription(description: string, workflowId: string): strin
 	return trimmed;
 }
 
-function inspectedWorkflowInfo(entry: PalantirRegisteredWorkflow): PalantirInspectedWorkflowInfo {
+function inspectedWorkflowInfo(entry: NornRegisteredWorkflow): NornInspectedWorkflowInfo {
 	return {
 		...workflowInfo(entry),
 		paramsSchema: jsonSchema(entry.workflow.params),
@@ -163,7 +163,7 @@ function inspectedWorkflowInfo(entry: PalantirRegisteredWorkflow): PalantirInspe
 	};
 }
 
-function workflowInfo(entry: PalantirRegisteredWorkflow): PalantirRegisteredWorkflowInfo {
+function workflowInfo(entry: NornRegisteredWorkflow): NornRegisteredWorkflowInfo {
 	return {
 		id: entry.workflow.id,
 		title: entry.workflow.title ?? null,
@@ -174,10 +174,10 @@ function workflowInfo(entry: PalantirRegisteredWorkflow): PalantirRegisteredWork
 	};
 }
 
-function gateInfo(workflow: PalantirAnyWorkflowDeclaration): PalantirWorkflowGateInfo | null {
+function gateInfo(workflow: NornAnyWorkflowDeclaration): NornWorkflowGateInfo | null {
 	return workflow.gate ? { enabled: true, fields: workflow.gate.fields } : null;
 }
 
-function jsonSchema(schema: z.ZodType): PalantirJsonSchema {
-	return z.toJSONSchema(schema, { io: "input" }) as PalantirJsonSchema;
+function jsonSchema(schema: z.ZodType): NornJsonSchema {
+	return z.toJSONSchema(schema, { io: "input" }) as NornJsonSchema;
 }

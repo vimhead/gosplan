@@ -1,6 +1,6 @@
-import type { PalantirAnyWorkflowDeclaration } from "./api.ts";
+import type { NornAnyWorkflowDeclaration } from "./api.ts";
 
-export function assertLaunchableWorkflow(workflow: PalantirAnyWorkflowDeclaration): void {
+export function assertLaunchableWorkflow(workflow: NornAnyWorkflowDeclaration): void {
 	if (!workflow.isEntrypoint) return;
 	if (!workflow.title || workflow.title.trim().length === 0) throw new Error(`Entrypoint workflow requires a title: ${workflow.id}`);
 }

@@ -49,7 +49,7 @@ jobs:
         run: |
           npm run release:pack
           mkdir -p dist/release
-          mv palantir-*.tgz dist/release/palantir-tip.tgz
+          mv norn-*.tgz dist/release/norn-tip.tgz
 
       - name: Build native binaries
         run: |
@@ -60,17 +60,17 @@ jobs:
           write_binary_build_info() {
             output="$1"
             cat > src/generated-build-info.ts <<EOF
-          import type { PalantirBuildInfo } from "./build-info.ts";
+          import type { NornBuildInfo } from "./build-info.ts";
 
-          export const PALANTIR_GENERATED_BUILD_INFO = {
+          export const NORN_GENERATED_BUILD_INFO = {
             kind: "github-release-binary",
             version: "$package_version",
             commit: "$TIP_COMMIT",
-            repository: "vimhead/palantir",
+            repository: "vimhead/norn",
             releaseTag: "$TIP_TAG",
             assetName: "$output",
             checksumAssetName: "$output.sha256",
-          } as const satisfies PalantirBuildInfo;
+          } as const satisfies NornBuildInfo;
           EOF
           }
 
@@ -82,11 +82,11 @@ jobs:
             chmod +x "dist/release/$output"
           }
 
-          build_binary bun-linux-x64 palantir-linux-x64
-          build_binary bun-linux-arm64 palantir-linux-arm64
-          build_binary bun-darwin-x64 palantir-darwin-x64
-          build_binary bun-darwin-arm64 palantir-darwin-arm64
-          build_binary bun-windows-x64 palantir-windows-x64.exe
+          build_binary bun-linux-x64 norn-linux-x64
+          build_binary bun-linux-arm64 norn-linux-arm64
+          build_binary bun-darwin-x64 norn-darwin-x64
+          build_binary bun-darwin-arm64 norn-darwin-arm64
+          build_binary bun-windows-x64 norn-windows-x64.exe
 
       - name: Copy installer
         run: |
@@ -96,7 +96,7 @@ jobs:
       - name: Write checksums
         run: |
           cd dist/release
-          artifacts=(palantir-* install.sh)
+          artifacts=(norn-* install.sh)
           for file in "${artifacts[@]}"; do
             sha256sum "$file" > "$file.sha256"
           done
@@ -123,8 +123,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$TIP_TAG" >/dev/null 2>&1; then
-            gh release edit "$TIP_TAG" --title "Palantir Tip" --notes-file dist/release-notes.md --prerelease --latest=false
+            gh release edit "$TIP_TAG" --title "Norn Tip" --notes-file dist/release-notes.md --prerelease --latest=false
             gh release upload "$TIP_TAG" dist/release/* --clobber
           else
-            gh release create "$TIP_TAG" dist/release/* --title "Palantir Tip" --notes-file dist/release-notes.md --prerelease --latest=false
+            gh release create "$TIP_TAG" dist/release/* --title "Norn Tip" --notes-file dist/release-notes.md --prerelease --latest=false
           fi

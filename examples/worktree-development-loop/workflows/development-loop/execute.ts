@@ -1,13 +1,13 @@
-import type { PalantirRunNext, PalantirRun } from "palantir";
+import type { NornRunNext, NornRun } from "norn";
 import { worktreeDevelopmentLoopManifest } from "../../manifest.ts";
 import type { DevelopmentLoopConfig, DevelopmentLoopParams } from "./schema.ts";
 import { materializeWorkspaceRepository } from "./repository.ts";
 
 export async function executeDevelopmentLoopWorkflow(
-	run: PalantirRun,
+	run: NornRun,
 	params: DevelopmentLoopParams,
 	config: DevelopmentLoopConfig,
-): Promise<PalantirRunNext> {
+): Promise<NornRunNext> {
 	const repositoryPath = await materializeWorkspaceRepository(run, config.repositoryRoot, params.baseRef);
 	await run.state.set(worktreeDevelopmentLoopManifest.states.developmentLoop.repositoryPath, repositoryPath);
 	await run.state.set(worktreeDevelopmentLoopManifest.states.developmentLoop.task, params.task);

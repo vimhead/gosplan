@@ -1,27 +1,27 @@
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
-import type { PalantirResolvedSeerModeConfig } from "./seer/config.ts";
+import type { NornResolvedSeerModeConfig } from "./seer/config.ts";
 
-const WORKFLOW_DECLARATION_KIND = "palantir.workflow";
+const WORKFLOW_DECLARATION_KIND = "norn.workflow";
 
 export type MaybePromise<T> = T | Promise<T>;
-export type PalantirDispose = () => void;
+export type NornDispose = () => void;
 
-export type PalantirWorkflowAnyGate = {
+export type NornWorkflowAnyGate = {
 	readonly enabled: true;
 	readonly fields?: readonly string[];
 };
 
-export type PalantirWorkflowIsolationMode = "runWorkspace" | "project";
+export type NornWorkflowIsolationMode = "runWorkspace" | "project";
 
-export type PalantirWorkflowIsolation<Mode extends PalantirWorkflowIsolationMode = PalantirWorkflowIsolationMode> = {
+export type NornWorkflowIsolation<Mode extends NornWorkflowIsolationMode = NornWorkflowIsolationMode> = {
 	readonly mode: Mode;
 };
 
-export type PalantirWorkflowDeclaration<
+export type NornWorkflowDeclaration<
 	Id extends string = string,
 	ParamsSchema extends z.ZodType = z.ZodType,
-	IsolationMode extends PalantirWorkflowIsolationMode = PalantirWorkflowIsolationMode,
+	IsolationMode extends NornWorkflowIsolationMode = NornWorkflowIsolationMode,
 > = {
 	readonly kind: typeof WORKFLOW_DECLARATION_KIND;
 	readonly id: Id;
@@ -29,17 +29,17 @@ export type PalantirWorkflowDeclaration<
 	readonly isEntrypoint: boolean;
 	readonly description?: string;
 	readonly params: ParamsSchema;
-	readonly gate?: PalantirWorkflowAnyGate;
-	readonly isolation: PalantirWorkflowIsolation<IsolationMode>;
+	readonly gate?: NornWorkflowAnyGate;
+	readonly isolation: NornWorkflowIsolation<IsolationMode>;
 };
 
-export type PalantirAnyWorkflowDeclaration = PalantirWorkflowDeclaration<string, z.ZodType>;
+export type NornAnyWorkflowDeclaration = NornWorkflowDeclaration<string, z.ZodType>;
 
-export type PalantirWorkflowParamsInput<TWorkflow extends PalantirAnyWorkflowDeclaration> = z.input<TWorkflow["params"]>;
-export type PalantirWorkflowParams<TWorkflow extends PalantirAnyWorkflowDeclaration> = z.output<TWorkflow["params"]>;
+export type NornWorkflowParamsInput<TWorkflow extends NornAnyWorkflowDeclaration> = z.input<TWorkflow["params"]>;
+export type NornWorkflowParams<TWorkflow extends NornAnyWorkflowDeclaration> = z.output<TWorkflow["params"]>;
 
-export type PalantirWorkflowGate<ParamsSchema extends z.ZodType> = unknown extends z.input<ParamsSchema>
-	? PalantirWorkflowAnyGate
+export type NornWorkflowGate<ParamsSchema extends z.ZodType> = unknown extends z.input<ParamsSchema>
+	? NornWorkflowAnyGate
 	: z.input<ParamsSchema> extends Record<string, unknown>
 		? {
 			readonly enabled: true;
@@ -50,45 +50,45 @@ export type PalantirWorkflowGate<ParamsSchema extends z.ZodType> = unknown exten
 			readonly fields?: never;
 		};
 
-export type PalantirWorkflowDefinition<
+export type NornWorkflowDefinition<
 	Id extends string | undefined = string | undefined,
 	ParamsSchema extends z.ZodType = z.ZodType,
-	IsolationMode extends PalantirWorkflowIsolationMode = PalantirWorkflowIsolationMode,
+	IsolationMode extends NornWorkflowIsolationMode = NornWorkflowIsolationMode,
 > = {
 	readonly id?: Id;
 	readonly title?: string;
 	readonly isEntrypoint: boolean;
 	readonly description?: string;
 	readonly params: ParamsSchema;
-	readonly gate?: PalantirWorkflowGate<ParamsSchema>;
-	readonly isolation?: PalantirWorkflowIsolation<IsolationMode>;
+	readonly gate?: NornWorkflowGate<ParamsSchema>;
+	readonly isolation?: NornWorkflowIsolation<IsolationMode>;
 };
 
-export type PalantirAnyWorkflowDefinition = {
+export type NornAnyWorkflowDefinition = {
 	readonly id?: string;
 	readonly title?: string;
 	readonly isEntrypoint: boolean;
 	readonly description?: string;
 	readonly params: z.ZodType;
-	readonly gate?: PalantirWorkflowAnyGate;
-	readonly isolation?: PalantirWorkflowIsolation;
+	readonly gate?: NornWorkflowAnyGate;
+	readonly isolation?: NornWorkflowIsolation;
 };
 
-export type PalantirWorkflowStateDefinition<T = unknown, Id extends string = string> = {
+export type NornWorkflowStateDefinition<T = unknown, Id extends string = string> = {
 	readonly id: Id;
 	readonly description?: string;
 	readonly schema: z.ZodType<T>;
 };
 
-export type PalantirWorkflowStateDefinitionInput<T = unknown, Id extends string | undefined = string | undefined> = {
+export type NornWorkflowStateDefinitionInput<T = unknown, Id extends string | undefined = string | undefined> = {
 	readonly id?: Id;
 	readonly description?: string;
 	readonly schema: z.ZodType<T>;
 };
 
-export type PalantirWorkflowPluginWorkflows = Record<string, PalantirAnyWorkflowDefinition>;
-export type PalantirWorkflowPluginStateTree = { readonly [key: string]: PalantirWorkflowPluginStateTreeNode };
-export type PalantirWorkflowPluginStateTreeNode = z.ZodType | PalantirWorkflowStateDefinitionInput | PalantirWorkflowPluginStateTree;
+export type NornWorkflowPluginWorkflows = Record<string, NornAnyWorkflowDefinition>;
+export type NornWorkflowPluginStateTree = { readonly [key: string]: NornWorkflowPluginStateTreeNode };
+export type NornWorkflowPluginStateTreeNode = z.ZodType | NornWorkflowStateDefinitionInput | NornWorkflowPluginStateTree;
 
 type JoinPath<Head extends string, Parts extends readonly string[]> = Parts extends readonly []
 	? Head
@@ -96,51 +96,51 @@ type JoinPath<Head extends string, Parts extends readonly string[]> = Parts exte
 		? JoinPath<`${Head}.${First}`, Rest>
 		: string;
 
-type PalantirInvalidGateFields<TWorkflow> = TWorkflow extends { readonly params: infer ParamsSchema extends z.ZodType; readonly gate: { readonly fields: infer Fields extends readonly string[] } }
+type NornInvalidGateFields<TWorkflow> = TWorkflow extends { readonly params: infer ParamsSchema extends z.ZodType; readonly gate: { readonly fields: infer Fields extends readonly string[] } }
 	? Exclude<Fields[number], Extract<keyof z.input<ParamsSchema>, string>>
 	: never;
 
-type PalantirValidatedWorkflowGate<TWorkflow> = [PalantirInvalidGateFields<TWorkflow>] extends [never]
+type NornValidatedWorkflowGate<TWorkflow> = [NornInvalidGateFields<TWorkflow>] extends [never]
 	? unknown
 	: { readonly gate: { readonly fields: readonly Extract<keyof z.input<TWorkflow extends { readonly params: infer ParamsSchema extends z.ZodType } ? ParamsSchema : z.ZodType>, string>[] } };
 
-export type PalantirValidatedWorkflowGates<Workflows> = {
-	readonly [Key in keyof Workflows]: PalantirValidatedWorkflowGate<Workflows[Key]>;
+export type NornValidatedWorkflowGates<Workflows> = {
+	readonly [Key in keyof Workflows]: NornValidatedWorkflowGate<Workflows[Key]>;
 };
 
-export type PalantirQualifiedPluginWorkflow<
+export type NornQualifiedPluginWorkflow<
 	PluginId extends string,
 	WorkflowKey extends string,
-	TWorkflow extends PalantirAnyWorkflowDefinition,
+	TWorkflow extends NornAnyWorkflowDefinition,
 > = TWorkflow extends { readonly params: infer ParamsSchema extends z.ZodType }
-	? PalantirWorkflowDeclaration<
+	? NornWorkflowDeclaration<
 		TWorkflow extends { readonly id: infer ExplicitId extends string } ? ExplicitId : `${PluginId}.${WorkflowKey}`,
 		ParamsSchema,
-		TWorkflow extends { readonly isolation: { readonly mode: infer IsolationMode extends PalantirWorkflowIsolationMode } } ? IsolationMode : "runWorkspace"
+		TWorkflow extends { readonly isolation: { readonly mode: infer IsolationMode extends NornWorkflowIsolationMode } } ? IsolationMode : "runWorkspace"
 	>
 	: never;
 
-export type PalantirQualifiedPluginWorkflows<PluginId extends string, Workflows extends PalantirWorkflowPluginWorkflows> = {
-	readonly [Key in keyof Workflows]: PalantirQualifiedPluginWorkflow<PluginId, Key & string, Workflows[Key]>;
+export type NornQualifiedPluginWorkflows<PluginId extends string, Workflows extends NornWorkflowPluginWorkflows> = {
+	readonly [Key in keyof Workflows]: NornQualifiedPluginWorkflow<PluginId, Key & string, Workflows[Key]>;
 };
 
-export type PalantirQualifiedPluginStates<PluginId extends string, States, Path extends readonly string[] = []> = {
+export type NornQualifiedPluginStates<PluginId extends string, States, Path extends readonly string[] = []> = {
 	readonly [Key in keyof States]: States[Key] extends z.ZodType
-		? PalantirWorkflowStateDefinition<z.output<States[Key]>, JoinPath<PluginId, [...Path, Key & string]>>
-		: States[Key] extends PalantirWorkflowStateDefinitionInput<infer Value>
-			? PalantirWorkflowStateDefinition<
+		? NornWorkflowStateDefinition<z.output<States[Key]>, JoinPath<PluginId, [...Path, Key & string]>>
+		: States[Key] extends NornWorkflowStateDefinitionInput<infer Value>
+			? NornWorkflowStateDefinition<
 				Value,
 				States[Key] extends { readonly id: infer ExplicitId extends string } ? ExplicitId : JoinPath<PluginId, [...Path, Key & string]>
 			>
-			: States[Key] extends PalantirWorkflowPluginStateTree
-				? PalantirQualifiedPluginStates<PluginId, States[Key], [...Path, Key & string]>
+			: States[Key] extends NornWorkflowPluginStateTree
+				? NornQualifiedPluginStates<PluginId, States[Key], [...Path, Key & string]>
 				: never;
 };
 
-export type PalantirWorkflowPluginManifest<
+export type NornWorkflowPluginManifest<
 	PluginId extends string = string,
 	ConfigSchema extends z.ZodType | undefined = z.ZodType | undefined,
-	Workflows extends Record<string, PalantirAnyWorkflowDeclaration> = Record<string, PalantirAnyWorkflowDeclaration>,
+	Workflows extends Record<string, NornAnyWorkflowDeclaration> = Record<string, NornAnyWorkflowDeclaration>,
 	States = undefined,
 > = {
 	readonly id: PluginId;
@@ -149,107 +149,107 @@ export type PalantirWorkflowPluginManifest<
 	readonly states: States;
 };
 
-export type PalantirAnyWorkflowPluginManifest = PalantirWorkflowPluginManifest<string, z.ZodType | undefined, Record<string, PalantirAnyWorkflowDeclaration>, unknown>;
+export type NornAnyWorkflowPluginManifest = NornWorkflowPluginManifest<string, z.ZodType | undefined, Record<string, NornAnyWorkflowDeclaration>, unknown>;
 
-export type PalantirWorkflowPluginConfigSchema<TManifest extends PalantirAnyWorkflowPluginManifest> = TManifest extends { readonly config?: infer ConfigSchema extends z.ZodType | undefined }
+export type NornWorkflowPluginConfigSchema<TManifest extends NornAnyWorkflowPluginManifest> = TManifest extends { readonly config?: infer ConfigSchema extends z.ZodType | undefined }
 	? ConfigSchema
 	: undefined;
 
-export type PalantirWorkflowPluginConfig<TManifest extends PalantirAnyWorkflowPluginManifest> = NonNullable<PalantirWorkflowPluginConfigSchema<TManifest>> extends z.ZodType
-	? z.output<NonNullable<PalantirWorkflowPluginConfigSchema<TManifest>>>
+export type NornWorkflowPluginConfig<TManifest extends NornAnyWorkflowPluginManifest> = NonNullable<NornWorkflowPluginConfigSchema<TManifest>> extends z.ZodType
+	? z.output<NonNullable<NornWorkflowPluginConfigSchema<TManifest>>>
 	: undefined;
 
-export type PalantirDefinePluginManifestInput<
+export type NornDefinePluginManifestInput<
 	PluginId extends string,
 	ConfigSchema extends z.ZodType | undefined,
-	Workflows extends PalantirWorkflowPluginWorkflows,
-	States extends PalantirWorkflowPluginStateTree | undefined,
+	Workflows extends NornWorkflowPluginWorkflows,
+	States extends NornWorkflowPluginStateTree | undefined,
 > = {
 	readonly id: PluginId;
 	readonly config?: ConfigSchema;
-	readonly workflows: Workflows & PalantirValidatedWorkflowGates<Workflows>;
+	readonly workflows: Workflows & NornValidatedWorkflowGates<Workflows>;
 	readonly states?: States;
 };
 
 export function definePluginManifest<
 	const PluginId extends string,
 	const ConfigSchema extends z.ZodType | undefined = undefined,
-	const Workflows extends PalantirWorkflowPluginWorkflows = PalantirWorkflowPluginWorkflows,
-	const States extends PalantirWorkflowPluginStateTree | undefined = undefined,
+	const Workflows extends NornWorkflowPluginWorkflows = NornWorkflowPluginWorkflows,
+	const States extends NornWorkflowPluginStateTree | undefined = undefined,
 >(
-	input: PalantirDefinePluginManifestInput<PluginId, ConfigSchema, Workflows, States>,
-): PalantirWorkflowPluginManifest<
+	input: NornDefinePluginManifestInput<PluginId, ConfigSchema, Workflows, States>,
+): NornWorkflowPluginManifest<
 	PluginId,
 	ConfigSchema,
-	PalantirQualifiedPluginWorkflows<PluginId, Workflows>,
-	States extends PalantirWorkflowPluginStateTree ? PalantirQualifiedPluginStates<PluginId, States> : undefined
+	NornQualifiedPluginWorkflows<PluginId, Workflows>,
+	States extends NornWorkflowPluginStateTree ? NornQualifiedPluginStates<PluginId, States> : undefined
 > {
 	assertLocalDeclarationId(input.id, "plugin");
 	const declaredIds = new Set<string>();
 	const workflows = Object.fromEntries(
 		Object.entries(input.workflows).map(([key, workflow]) => [key, qualifyWorkflow(input.id, key, workflow, declaredIds)]),
-	) as PalantirQualifiedPluginWorkflows<PluginId, Workflows>;
+	) as NornQualifiedPluginWorkflows<PluginId, Workflows>;
 	return {
 		id: input.id,
 		config: input.config,
 		workflows,
-		states: qualifyStateTree(input.id, input.states, [], declaredIds) as States extends PalantirWorkflowPluginStateTree ? PalantirQualifiedPluginStates<PluginId, States> : undefined,
+		states: qualifyStateTree(input.id, input.states, [], declaredIds) as States extends NornWorkflowPluginStateTree ? NornQualifiedPluginStates<PluginId, States> : undefined,
 	};
 }
 
-export type PalantirRunNext = {
+export type NornRunNext = {
 	readonly type: "next";
 	readonly workflowId: string;
 	readonly params: unknown;
 };
 
-export type PalantirRunOutcomeMetadata = {
+export type NornRunOutcomeMetadata = {
 	readonly summary?: string;
-	readonly artifacts?: Record<string, PalantirWorkflowArtifactRef>;
-	readonly logs?: Record<string, PalantirLogRef>;
+	readonly artifacts?: Record<string, NornWorkflowArtifactRef>;
+	readonly logs?: Record<string, NornLogRef>;
 	readonly data?: Record<string, unknown>;
 };
 
-export type PalantirRunComplete = {
+export type NornRunComplete = {
 	readonly type: "complete";
-	readonly metadata?: PalantirRunOutcomeMetadata;
+	readonly metadata?: NornRunOutcomeMetadata;
 };
 
-export type PalantirRunFail = {
+export type NornRunFail = {
 	readonly type: "fail";
-	readonly metadata: PalantirRunOutcomeMetadata & { readonly summary: string };
+	readonly metadata: NornRunOutcomeMetadata & { readonly summary: string };
 };
 
-export type PalantirWorkflowExecutionResult = PalantirRunNext | PalantirRunComplete | PalantirRunFail;
+export type NornWorkflowExecutionResult = NornRunNext | NornRunComplete | NornRunFail;
 
-export type PalantirRunFor<TWorkflow extends PalantirAnyWorkflowDeclaration> = TWorkflow extends { readonly isolation: { readonly mode: "project" } }
-	? PalantirProjectRun
-	: PalantirRun;
+export type NornRunFor<TWorkflow extends NornAnyWorkflowDeclaration> = TWorkflow extends { readonly isolation: { readonly mode: "project" } }
+	? NornProjectRun
+	: NornRun;
 
-export type PalantirWorkflowGateImplementation<TWorkflow extends PalantirAnyWorkflowDeclaration, TConfig> = {
+export type NornWorkflowGateImplementation<TWorkflow extends NornAnyWorkflowDeclaration, TConfig> = {
 	describe(
-		run: PalantirRunFor<TWorkflow>,
-		params: PalantirWorkflowParams<TWorkflow>,
+		run: NornRunFor<TWorkflow>,
+		params: NornWorkflowParams<TWorkflow>,
 		config: TConfig,
 	): MaybePromise<string>;
 };
 
-export type PalantirWorkflowImplementation<TWorkflow extends PalantirAnyWorkflowDeclaration, TConfig = unknown> = {
-	readonly gate?: PalantirWorkflowGateImplementation<TWorkflow, TConfig>;
+export type NornWorkflowImplementation<TWorkflow extends NornAnyWorkflowDeclaration, TConfig = unknown> = {
+	readonly gate?: NornWorkflowGateImplementation<TWorkflow, TConfig>;
 	execute(
-		run: PalantirRunFor<TWorkflow>,
-		params: PalantirWorkflowParams<TWorkflow>,
+		run: NornRunFor<TWorkflow>,
+		params: NornWorkflowParams<TWorkflow>,
 		config: TConfig,
-	): MaybePromise<PalantirWorkflowExecutionResult>;
+	): MaybePromise<NornWorkflowExecutionResult>;
 };
 
-export type PalantirRunStartOptions = {
+export type NornRunStartOptions = {
 	readonly id?: string;
 	readonly name?: string;
 	readonly configOverride?: unknown;
 };
 
-export type PalantirStartedRunResult = {
+export type NornStartedRunResult = {
 	readonly status: "running";
 	readonly id: string;
 	readonly name: string;
@@ -259,85 +259,85 @@ export type PalantirStartedRunResult = {
 	readonly workflowId: string;
 };
 
-export type PalantirCompletedRunResult = {
+export type NornCompletedRunResult = {
 	readonly status: "completed";
 	readonly id: string;
 	readonly name: string;
 	readonly workspace: string;
 	readonly cwd: string;
 	readonly workflowId: string;
-	readonly metadata?: PalantirRunOutcomeMetadata;
+	readonly metadata?: NornRunOutcomeMetadata;
 };
 
-export type PalantirFailedRunResult = {
+export type NornFailedRunResult = {
 	readonly status: "failed";
 	readonly id: string;
 	readonly name: string;
 	readonly workspace: string;
 	readonly cwd: string;
 	readonly workflowId: string;
-	readonly metadata: PalantirRunOutcomeMetadata & { readonly summary: string };
+	readonly metadata: NornRunOutcomeMetadata & { readonly summary: string };
 };
 
-export type PalantirRunInterruption = {
+export type NornRunInterruption = {
 	readonly workflowId: string;
 	readonly params: unknown;
 	readonly description: string;
 	readonly fields?: readonly string[];
 };
 
-export type PalantirInterruptedRunResult = {
+export type NornInterruptedRunResult = {
 	readonly status: "interrupted";
 	readonly id: string;
 	readonly name: string;
 	readonly workspace: string;
 	readonly cwd: string;
 	readonly workflowId: string;
-	readonly interruption: PalantirRunInterruption;
+	readonly interruption: NornRunInterruption;
 };
 
-export type PalantirRunResult = PalantirStartedRunResult | PalantirCompletedRunResult | PalantirFailedRunResult | PalantirInterruptedRunResult;
+export type NornRunResult = NornStartedRunResult | NornCompletedRunResult | NornFailedRunResult | NornInterruptedRunResult;
 
-export type PalantirRunStatus = "running" | "interrupted" | "completed" | "failed";
-export type PalantirRunHealth = "healthy" | "unhealthy";
+export type NornRunStatus = "running" | "interrupted" | "completed" | "failed";
+export type NornRunHealth = "healthy" | "unhealthy";
 
-export type PalantirRunOutcomeInfo = {
+export type NornRunOutcomeInfo = {
 	readonly workflowId: string;
 	readonly completedAt: string;
 	readonly status: "completed" | "failed";
-	readonly metadata?: PalantirRunOutcomeMetadata;
+	readonly metadata?: NornRunOutcomeMetadata;
 };
 
-export type PalantirRunFailureInfo = {
+export type NornRunFailureInfo = {
 	readonly workflowId: string;
 	readonly error: string;
-	readonly metadata?: PalantirRunOutcomeMetadata;
+	readonly metadata?: NornRunOutcomeMetadata;
 	readonly failedAt: string;
 };
 
-export type PalantirRunInfo = {
+export type NornRunInfo = {
 	readonly version: number;
 	readonly id: string;
 	readonly name: string;
 	readonly path: string;
 	readonly entrypointWorkflowId: string;
 	readonly currentWorkflowId?: string;
-	readonly status: PalantirRunStatus;
-	readonly health: PalantirRunHealth;
-	readonly interruption?: PalantirRunInterruption;
-	readonly outcome?: PalantirRunOutcomeInfo;
-	readonly failed?: PalantirRunFailureInfo;
+	readonly status: NornRunStatus;
+	readonly health: NornRunHealth;
+	readonly interruption?: NornRunInterruption;
+	readonly outcome?: NornRunOutcomeInfo;
+	readonly failed?: NornRunFailureInfo;
 	readonly startedAt: string;
 	readonly updatedAt: string;
 };
 
-export type DeletedPalantirRunInfo = {
+export type DeletedNornRunInfo = {
 	readonly id: string;
 	readonly name: string;
 	readonly path: string;
 };
 
-export type PalantirRunCheckpoint = {
+export type NornRunCheckpoint = {
 	readonly id: string;
 	readonly path: string;
 	readonly index: number;
@@ -345,47 +345,47 @@ export type PalantirRunCheckpoint = {
 	readonly createdAt: string;
 };
 
-export type PalantirWorkflowStateReader = {
-	get<T>(state: PalantirWorkflowStateDefinition<T>): Promise<T>;
-	getOptional<T>(state: PalantirWorkflowStateDefinition<T>): Promise<T | undefined>;
+export type NornWorkflowStateReader = {
+	get<T>(state: NornWorkflowStateDefinition<T>): Promise<T>;
+	getOptional<T>(state: NornWorkflowStateDefinition<T>): Promise<T | undefined>;
 };
 
-export type PalantirWorkflowState = PalantirWorkflowStateReader & {
-	set<T>(state: PalantirWorkflowStateDefinition<T>, value: T): Promise<void>;
+export type NornWorkflowState = NornWorkflowStateReader & {
+	set<T>(state: NornWorkflowStateDefinition<T>, value: T): Promise<void>;
 };
 
-export type PalantirWorkflowPluginContext = {
+export type NornWorkflowPluginContext = {
 	readonly cwd: string;
-	readonly state: PalantirWorkflowState;
+	readonly state: NornWorkflowState;
 };
 
-export type PalantirWorkflowPluginImplementation<TManifest extends PalantirAnyWorkflowPluginManifest> = {
+export type NornWorkflowPluginImplementation<TManifest extends NornAnyWorkflowPluginManifest> = {
 	readonly workflows: {
-		readonly [Key in keyof TManifest["workflows"]]: PalantirWorkflowImplementation<TManifest["workflows"][Key], PalantirWorkflowPluginConfig<TManifest>>;
+		readonly [Key in keyof TManifest["workflows"]]: NornWorkflowImplementation<TManifest["workflows"][Key], NornWorkflowPluginConfig<TManifest>>;
 	};
 };
 
-export type PalantirWorkflowPluginImplementationFactory<TManifest extends PalantirAnyWorkflowPluginManifest> = (
-	context: PalantirWorkflowPluginContext,
-) => PalantirWorkflowPluginImplementation<TManifest>;
+export type NornWorkflowPluginImplementationFactory<TManifest extends NornAnyWorkflowPluginManifest> = (
+	context: NornWorkflowPluginContext,
+) => NornWorkflowPluginImplementation<TManifest>;
 
-export type PalantirWorkflowPluginImplementationInput<TManifest extends PalantirAnyWorkflowPluginManifest> =
-	| PalantirWorkflowPluginImplementation<TManifest>
-	| PalantirWorkflowPluginImplementationFactory<TManifest>;
+export type NornWorkflowPluginImplementationInput<TManifest extends NornAnyWorkflowPluginManifest> =
+	| NornWorkflowPluginImplementation<TManifest>
+	| NornWorkflowPluginImplementationFactory<TManifest>;
 
-export type PalantirWorkflowPlugin<TManifest extends PalantirAnyWorkflowPluginManifest = PalantirAnyWorkflowPluginManifest> = {
+export type NornWorkflowPlugin<TManifest extends NornAnyWorkflowPluginManifest = NornAnyWorkflowPluginManifest> = {
 	readonly manifest: TManifest;
-	readonly implementation: PalantirWorkflowPluginImplementationInput<TManifest>;
+	readonly implementation: NornWorkflowPluginImplementationInput<TManifest>;
 };
 
-export function definePlugin<TManifest extends PalantirAnyWorkflowPluginManifest>(
+export function definePlugin<TManifest extends NornAnyWorkflowPluginManifest>(
 	manifest: TManifest,
-	implementation: PalantirWorkflowPluginImplementationInput<TManifest>,
-): PalantirWorkflowPlugin<TManifest> {
+	implementation: NornWorkflowPluginImplementationInput<TManifest>,
+): NornWorkflowPlugin<TManifest> {
 	return { manifest, implementation };
 }
 
-export type PalantirCommandRunInput = {
+export type NornCommandRunInput = {
 	readonly label: string;
 	readonly command: string | readonly [string, ...string[]];
 	readonly cwd?: string;
@@ -397,13 +397,13 @@ export const workflowArtifactRefSchema = z.object({
 	path: z.string(),
 });
 
-export type PalantirWorkflowArtifactRef = z.output<typeof workflowArtifactRefSchema>;
+export type NornWorkflowArtifactRef = z.output<typeof workflowArtifactRefSchema>;
 
-export type PalantirLogRef = {
+export type NornLogRef = {
 	readonly id: string;
 };
 
-export type PalantirCommandRunResult = {
+export type NornCommandRunResult = {
 	readonly label: string;
 	readonly command: string | readonly [string, ...string[]];
 	readonly cwd: string;
@@ -411,38 +411,38 @@ export type PalantirCommandRunResult = {
 	readonly stdoutTail: string;
 	readonly stderrTail: string;
 	readonly killed: boolean;
-	readonly stdoutLog: PalantirLogRef;
-	readonly stderrLog: PalantirLogRef;
+	readonly stdoutLog: NornLogRef;
+	readonly stderrLog: NornLogRef;
 };
 
-export type PalantirAgentInitialEvent = {
+export type NornAgentInitialEvent = {
 	readonly name: string;
 	readonly data?: unknown;
 };
 
-export type PalantirAgentSpawnInput = {
+export type NornAgentSpawnInput = {
 	readonly label: string;
 	readonly cwd?: string;
 	readonly tools?: string[];
-	readonly initialEvents?: readonly PalantirAgentInitialEvent[];
+	readonly initialEvents?: readonly NornAgentInitialEvent[];
 	readonly model?: CreateAgentSessionOptions["model"];
 	readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
 };
 
-export type PalantirAgentPromptInput<ResponseSchema extends z.ZodType> = {
+export type NornAgentPromptInput<ResponseSchema extends z.ZodType> = {
 	readonly prompt: string;
 	readonly response: ResponseSchema;
 	readonly maxAttempts?: number;
 };
 
-export type PalantirAgentRunInput<ResponseSchema extends z.ZodType> = PalantirAgentSpawnInput & PalantirAgentPromptInput<ResponseSchema>;
+export type NornAgentRunInput<ResponseSchema extends z.ZodType> = NornAgentSpawnInput & NornAgentPromptInput<ResponseSchema>;
 
-export type PalantirAgentSessionEvents = {
+export type NornAgentSessionEvents = {
 	emit(name: string, data?: unknown): void;
-	on(name: string, handler: (data: unknown) => void): PalantirDispose;
+	on(name: string, handler: (data: unknown) => void): NornDispose;
 };
 
-export type PalantirAgentUsageCost = {
+export type NornAgentUsageCost = {
 	readonly input: number;
 	readonly output: number;
 	readonly cacheRead: number;
@@ -450,17 +450,17 @@ export type PalantirAgentUsageCost = {
 	readonly total: number;
 };
 
-export type PalantirAgentUsage = {
+export type NornAgentUsage = {
 	readonly input: number;
 	readonly output: number;
 	readonly cacheRead: number;
 	readonly cacheWrite: number;
 	readonly reasoning?: number;
 	readonly totalTokens: number;
-	readonly cost: PalantirAgentUsageCost;
+	readonly cost: NornAgentUsageCost;
 };
 
-export type PalantirAgentMetrics = {
+export type NornAgentMetrics = {
 	readonly index: number;
 	readonly label: string;
 	readonly status: "running" | "completed" | "failed";
@@ -468,10 +468,10 @@ export type PalantirAgentMetrics = {
 	readonly endedAt?: string;
 	readonly wallMs: number;
 	readonly attempts?: number;
-	readonly usage: PalantirAgentUsage;
+	readonly usage: NornAgentUsage;
 };
 
-export type PalantirCommandMetrics = {
+export type NornCommandMetrics = {
 	readonly index: number;
 	readonly label: string;
 	readonly status: "running" | "completed" | "failed";
@@ -482,7 +482,7 @@ export type PalantirCommandMetrics = {
 	readonly killed?: boolean;
 };
 
-export type PalantirWorkflowMetrics = {
+export type NornWorkflowMetrics = {
 	readonly index: number;
 	readonly workflowId: string;
 	readonly status: "running" | "completed" | "failed" | "transitioned";
@@ -492,13 +492,13 @@ export type PalantirWorkflowMetrics = {
 	readonly ownMs: number;
 	readonly agentsMs: number;
 	readonly commandsMs: number;
-	readonly agentUsage: PalantirAgentUsage;
-	readonly agents: readonly PalantirAgentMetrics[];
-	readonly commands: readonly PalantirCommandMetrics[];
+	readonly agentUsage: NornAgentUsage;
+	readonly agents: readonly NornAgentMetrics[];
+	readonly commands: readonly NornCommandMetrics[];
 };
 
-export type PalantirRunMetrics = {
-	readonly status: PalantirRunStatus;
+export type NornRunMetrics = {
+	readonly status: NornRunStatus;
 	readonly startedAt: string;
 	readonly endedAt?: string;
 	readonly wallMs: number;
@@ -508,122 +508,122 @@ export type PalantirRunMetrics = {
 	readonly workflowOwnMs: number;
 	readonly agentsMs: number;
 	readonly commandsMs: number;
-	readonly agentUsage: PalantirAgentUsage;
-	readonly workflows: readonly PalantirWorkflowMetrics[];
+	readonly agentUsage: NornAgentUsage;
+	readonly workflows: readonly NornWorkflowMetrics[];
 };
 
-export type PalantirAgentRunRawAttempt = {
+export type NornAgentRunRawAttempt = {
 	readonly attempt: number;
 	readonly text: string;
 	readonly messages: unknown[];
 	readonly responseToolCalled: boolean;
-	readonly usage: PalantirAgentUsage;
+	readonly usage: NornAgentUsage;
 	readonly toolResponse?: unknown;
 	readonly sessionFile?: string;
 	readonly error?: string;
 };
 
-export type PalantirAgentRunResult<ResponseSchema extends z.ZodType> = {
+export type NornAgentRunResult<ResponseSchema extends z.ZodType> = {
 	readonly label: string;
 	readonly cwd: string;
 	readonly response: z.output<ResponseSchema>;
-	readonly usage: PalantirAgentUsage;
+	readonly usage: NornAgentUsage;
 	readonly raw: {
 		readonly text: string;
 		readonly messages: unknown[];
 		readonly responseToolCalled: boolean;
-		readonly usage: PalantirAgentUsage;
+		readonly usage: NornAgentUsage;
 		readonly toolResponse?: unknown;
 		readonly sessionFile?: string;
-		readonly attempts: readonly PalantirAgentRunRawAttempt[];
+		readonly attempts: readonly NornAgentRunRawAttempt[];
 	};
 };
 
-export type PalantirAgentSession = {
+export type NornAgentSession = {
 	readonly label: string;
 	readonly cwd: string;
-	readonly events: PalantirAgentSessionEvents;
-	run<ResponseSchema extends z.ZodType>(input: PalantirAgentPromptInput<ResponseSchema>): Promise<PalantirAgentRunResult<ResponseSchema>>;
+	readonly events: NornAgentSessionEvents;
+	run<ResponseSchema extends z.ZodType>(input: NornAgentPromptInput<ResponseSchema>): Promise<NornAgentRunResult<ResponseSchema>>;
 	dispose(): Promise<void>;
 };
 
-export type PalantirRun = PalantirRunBase;
+export type NornRun = NornRunBase;
 
-export type PalantirProjectRun = PalantirRunBase & {
+export type NornProjectRun = NornRunBase & {
 	projectRoot: string;
 	projectPath(relativePath: string): string;
 };
 
-type PalantirRunBase = {
+type NornRunBase = {
 	id: string;
 	workspace: string;
 	cwd: string;
 	path(relativePath: string): string;
-	next<TWorkflow extends PalantirAnyWorkflowDeclaration>(
+	next<TWorkflow extends NornAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
-		params: PalantirWorkflowParamsInput<TWorkflow>,
-	): PalantirRunNext;
-	next(workflowId: string, params: unknown): PalantirRunNext;
-	complete(metadata?: PalantirRunOutcomeMetadata): PalantirRunComplete;
-	fail(metadata: PalantirRunOutcomeMetadata & { readonly summary: string }): PalantirRunFail;
-	state: PalantirWorkflowState;
+		params: NornWorkflowParamsInput<TWorkflow>,
+	): NornRunNext;
+	next(workflowId: string, params: unknown): NornRunNext;
+	complete(metadata?: NornRunOutcomeMetadata): NornRunComplete;
+	fail(metadata: NornRunOutcomeMetadata & { readonly summary: string }): NornRunFail;
+	state: NornWorkflowState;
 	artifacts: {
-		write(path: string, content: string): Promise<PalantirWorkflowArtifactRef>;
-		read(ref: PalantirWorkflowArtifactRef): Promise<string>;
+		write(path: string, content: string): Promise<NornWorkflowArtifactRef>;
+		read(ref: NornWorkflowArtifactRef): Promise<string>;
 	};
 	logs: {
-		read(log: PalantirLogRef): Promise<string>;
+		read(log: NornLogRef): Promise<string>;
 	};
 	commands: {
-		run(input: PalantirCommandRunInput): Promise<PalantirCommandRunResult>;
+		run(input: NornCommandRunInput): Promise<NornCommandRunResult>;
 	};
 	agents: {
-		spawn(input: PalantirAgentSpawnInput): Promise<PalantirAgentSession>;
-		run<ResponseSchema extends z.ZodType>(input: PalantirAgentRunInput<ResponseSchema>): Promise<PalantirAgentRunResult<ResponseSchema>>;
+		spawn(input: NornAgentSpawnInput): Promise<NornAgentSession>;
+		run<ResponseSchema extends z.ZodType>(input: NornAgentRunInput<ResponseSchema>): Promise<NornAgentRunResult<ResponseSchema>>;
 	};
 };
 
-export type PalantirWorkflowPluginInfo = {
+export type NornWorkflowPluginInfo = {
 	readonly id: string;
 	readonly path?: string;
 	readonly configPath?: string;
 };
 
-export type PalantirJsonSchema = Record<string, unknown>;
+export type NornJsonSchema = Record<string, unknown>;
 
-export type PalantirWorkflowGateInfo = {
+export type NornWorkflowGateInfo = {
 	readonly enabled: true;
 	readonly fields?: readonly string[];
 };
 
-export type PalantirRegisteredWorkflowInfo = {
+export type NornRegisteredWorkflowInfo = {
 	readonly id: string;
 	readonly title: string | null;
 	readonly description?: string;
 	readonly isEntrypoint: boolean;
-	readonly isolation: PalantirWorkflowIsolation;
-	readonly plugin?: PalantirWorkflowPluginInfo;
+	readonly isolation: NornWorkflowIsolation;
+	readonly plugin?: NornWorkflowPluginInfo;
 };
 
-export type PalantirInspectedWorkflowInfo = PalantirRegisteredWorkflowInfo & {
-	readonly paramsSchema: PalantirJsonSchema;
-	readonly gate: PalantirWorkflowGateInfo | null;
+export type NornInspectedWorkflowInfo = NornRegisteredWorkflowInfo & {
+	readonly paramsSchema: NornJsonSchema;
+	readonly gate: NornWorkflowGateInfo | null;
 };
 
-export type PalantirProjectPluginInfo = PalantirWorkflowPluginInfo & {
-	readonly configSchema: PalantirJsonSchema | null;
+export type NornProjectPluginInfo = NornWorkflowPluginInfo & {
+	readonly configSchema: NornJsonSchema | null;
 	readonly config: unknown;
 };
 
-export type PalantirProjectInfo = {
+export type NornProjectInfo = {
 	readonly cwd: string;
 	readonly projectPath: string;
 	readonly projectRoot: string;
 	readonly configPath: string;
 	readonly configRoot: string;
 	readonly configFiles: readonly string[];
-	readonly plugins: readonly PalantirProjectPluginInfo[];
-	readonly seerMode: PalantirResolvedSeerModeConfig | null;
+	readonly plugins: readonly NornProjectPluginInfo[];
+	readonly seerMode: NornResolvedSeerModeConfig | null;
 };
 
 function assertLocalDeclarationId(id: string, kind: "plugin" | "workflow" | "state"): void {
@@ -635,27 +635,27 @@ function resolveDeclarationId(pluginId: string, path: readonly string[], explici
 	for (const segment of path) assertLocalDeclarationId(segment, kind);
 	const id = explicitId ?? [pluginId, ...path].join(".");
 	if (explicitId !== undefined) assertPluginQualifiedId(pluginId, explicitId, kind);
-	if (declaredIds.has(id)) throw new Error(`Duplicate Palantir ${kind} id: ${id}`);
+	if (declaredIds.has(id)) throw new Error(`Duplicate Norn ${kind} id: ${id}`);
 	declaredIds.add(id);
 	return id;
 }
 
 function assertPluginQualifiedId(pluginId: string, id: string, kind: "workflow" | "state"): void {
-	if (!id.startsWith(`${pluginId}.`)) throw new Error(`Explicit Palantir ${kind} id must start with ${pluginId}.: ${id}`);
-	if (id.length === pluginId.length + 1) throw new Error(`Explicit Palantir ${kind} id must not be empty after ${pluginId}.`);
+	if (!id.startsWith(`${pluginId}.`)) throw new Error(`Explicit Norn ${kind} id must start with ${pluginId}.: ${id}`);
+	if (id.length === pluginId.length + 1) throw new Error(`Explicit Norn ${kind} id must not be empty after ${pluginId}.`);
 }
 
-function qualifyWorkflow<PluginId extends string, TWorkflow extends PalantirAnyWorkflowDefinition>(
+function qualifyWorkflow<PluginId extends string, TWorkflow extends NornAnyWorkflowDefinition>(
 	pluginId: PluginId,
 	key: string,
 	workflow: TWorkflow,
 	declaredIds: Set<string>,
-): PalantirQualifiedPluginWorkflow<PluginId, string, TWorkflow> {
+): NornQualifiedPluginWorkflow<PluginId, string, TWorkflow> {
 	const id = resolveDeclarationId(pluginId, [key], workflow.id, "workflow", declaredIds);
-	return { kind: WORKFLOW_DECLARATION_KIND, ...workflow, id, isolation: workflow.isolation ?? { mode: "runWorkspace" } } as unknown as PalantirQualifiedPluginWorkflow<PluginId, string, TWorkflow>;
+	return { kind: WORKFLOW_DECLARATION_KIND, ...workflow, id, isolation: workflow.isolation ?? { mode: "runWorkspace" } } as unknown as NornQualifiedPluginWorkflow<PluginId, string, TWorkflow>;
 }
 
-function qualifyStateTree(pluginId: string, node: PalantirWorkflowPluginStateTreeNode | undefined, path: readonly string[], declaredIds: Set<string>): unknown {
+function qualifyStateTree(pluginId: string, node: NornWorkflowPluginStateTreeNode | undefined, path: readonly string[], declaredIds: Set<string>): unknown {
 	if (!node) return undefined;
 	if (isZodSchema(node)) return { id: resolveDeclarationId(pluginId, path, undefined, "state", declaredIds), schema: node };
 	if (isWorkflowStateDefinitionInput(node)) {
@@ -664,7 +664,7 @@ function qualifyStateTree(pluginId: string, node: PalantirWorkflowPluginStateTre
 	return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, qualifyStateTree(pluginId, child, [...path, key], declaredIds)]));
 }
 
-export function isWorkflowDeclaration(value: unknown): value is PalantirAnyWorkflowDeclaration {
+export function isWorkflowDeclaration(value: unknown): value is NornAnyWorkflowDeclaration {
 	if (!value || typeof value !== "object") return false;
 	const candidate = value as { kind?: unknown; id?: unknown; title?: unknown; isEntrypoint?: unknown; params?: unknown; isolation?: { mode?: unknown } };
 	return (
@@ -678,7 +678,7 @@ export function isWorkflowDeclaration(value: unknown): value is PalantirAnyWorkf
 	);
 }
 
-function isWorkflowStateDefinitionInput(value: unknown): value is PalantirWorkflowStateDefinitionInput<unknown> {
+function isWorkflowStateDefinitionInput(value: unknown): value is NornWorkflowStateDefinitionInput<unknown> {
 	if (!value || typeof value !== "object") return false;
 	const candidate = value as { id?: unknown; schema?: unknown };
 	return (candidate.id === undefined || typeof candidate.id === "string") && isZodSchema(candidate.schema);
@@ -688,13 +688,13 @@ function isZodSchema(value: unknown): value is z.ZodType {
 	return Boolean(value && typeof value === "object" && typeof (value as { safeParse?: unknown }).safeParse === "function");
 }
 
-export function isWorkflowPlugin(value: unknown): value is PalantirWorkflowPlugin {
+export function isWorkflowPlugin(value: unknown): value is NornWorkflowPlugin {
 	if (!value || typeof value !== "object") return false;
 	const candidate = value as { manifest?: unknown; implementation?: unknown };
 	return isWorkflowPluginManifest(candidate.manifest) && Boolean(candidate.implementation);
 }
 
-export function isWorkflowPluginManifest(value: unknown): value is PalantirAnyWorkflowPluginManifest {
+export function isWorkflowPluginManifest(value: unknown): value is NornAnyWorkflowPluginManifest {
 	if (!value || typeof value !== "object") return false;
 	const candidate = value as { id?: unknown; workflows?: unknown };
 	if (typeof candidate.id !== "string" || candidate.id.length === 0) return false;
@@ -702,19 +702,19 @@ export function isWorkflowPluginManifest(value: unknown): value is PalantirAnyWo
 	return Object.values(candidate.workflows).every(isWorkflowDeclaration);
 }
 
-export function isWorkflowNext(value: unknown): value is PalantirRunNext {
+export function isWorkflowNext(value: unknown): value is NornRunNext {
 	if (!value || typeof value !== "object") return false;
 	const candidate = value as { type?: unknown; workflowId?: unknown; params?: unknown };
 	return candidate.type === "next" && typeof candidate.workflowId === "string" && candidate.workflowId.length > 0;
 }
 
-export function isWorkflowComplete(value: unknown): value is PalantirRunComplete {
+export function isWorkflowComplete(value: unknown): value is NornRunComplete {
 	if (!value || typeof value !== "object") return false;
 	const candidate = value as { type?: unknown };
 	return candidate.type === "complete";
 }
 
-export function isWorkflowFail(value: unknown): value is PalantirRunFail {
+export function isWorkflowFail(value: unknown): value is NornRunFail {
 	if (!value || typeof value !== "object") return false;
 	const candidate = value as { type?: unknown; metadata?: { summary?: unknown } };
 	return candidate.type === "fail" && typeof candidate.metadata?.summary === "string" && candidate.metadata.summary.length > 0;

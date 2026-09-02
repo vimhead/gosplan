@@ -1,6 +1,6 @@
-import type { PalantirAgentUsage } from "../api.ts";
+import type { NornAgentUsage } from "../api.ts";
 
-export function agentUsageFromValue(value: unknown): PalantirAgentUsage | undefined {
+export function agentUsageFromValue(value: unknown): NornAgentUsage | undefined {
 	if (!value || typeof value !== "object") return undefined;
 	const usage = value as Record<string, unknown>;
 	const input = numberField(usage.input);
@@ -27,11 +27,11 @@ export function agentUsageFromValue(value: unknown): PalantirAgentUsage | undefi
 	};
 }
 
-export function totalAgentUsage(usages: readonly PalantirAgentUsage[]): PalantirAgentUsage {
+export function totalAgentUsage(usages: readonly NornAgentUsage[]): NornAgentUsage {
 	return usages.reduce(addAgentUsage, emptyAgentUsage());
 }
 
-export function addAgentUsage(left: PalantirAgentUsage, right: PalantirAgentUsage): PalantirAgentUsage {
+export function addAgentUsage(left: NornAgentUsage, right: NornAgentUsage): NornAgentUsage {
 	const reasoning = left.reasoning === undefined && right.reasoning === undefined ? undefined : (left.reasoning ?? 0) + (right.reasoning ?? 0);
 	return {
 		input: left.input + right.input,
@@ -50,7 +50,7 @@ export function addAgentUsage(left: PalantirAgentUsage, right: PalantirAgentUsag
 	};
 }
 
-export function emptyAgentUsage(): PalantirAgentUsage {
+export function emptyAgentUsage(): NornAgentUsage {
 	return {
 		input: 0,
 		output: 0,

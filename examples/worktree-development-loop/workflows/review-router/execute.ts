@@ -1,12 +1,12 @@
-import type { PalantirWorkflowExecutionResult, PalantirRun } from "palantir";
+import type { NornWorkflowExecutionResult, NornRun } from "norn";
 import { worktreeDevelopmentLoopManifest } from "../../manifest.ts";
 import type { StoredReview } from "../review/schema.ts";
 import type { ReviewRouterParams } from "./schema.ts";
 
 export async function executeReviewRouterWorkflow(
-	run: PalantirRun,
+	run: NornRun,
 	params: ReviewRouterParams,
-): Promise<PalantirWorkflowExecutionResult> {
+): Promise<NornWorkflowExecutionResult> {
 	const repositoryPath = await run.state.get(worktreeDevelopmentLoopManifest.states.developmentLoop.repositoryPath);
 	const planArtifact = await run.state.get(worktreeDevelopmentLoopManifest.states.planning.planArtifact);
 	const currentIteration = await run.state.get(worktreeDevelopmentLoopManifest.states.developmentLoop.currentIteration);

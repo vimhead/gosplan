@@ -2,51 +2,51 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
-	type PalantirAnyWorkflowDeclaration,
-	type PalantirAnyWorkflowPluginManifest,
-	type PalantirDispose,
-	type PalantirRunStartOptions,
-	type PalantirInterruptedRunResult,
-	type PalantirRunResult,
-	type PalantirRunCheckpoint,
-	type PalantirRunInfo,
-	type PalantirWorkflowPlugin,
-	type PalantirWorkflowPluginImplementation,
-	type PalantirWorkflowPluginImplementationInput,
-	type PalantirRunNext,
+	type NornAnyWorkflowDeclaration,
+	type NornAnyWorkflowPluginManifest,
+	type NornDispose,
+	type NornRunStartOptions,
+	type NornInterruptedRunResult,
+	type NornRunResult,
+	type NornRunCheckpoint,
+	type NornRunInfo,
+	type NornWorkflowPlugin,
+	type NornWorkflowPluginImplementation,
+	type NornWorkflowPluginImplementationInput,
+	type NornRunNext,
 } from "../api.ts";
-import { PalantirAgentResponseCollector } from "./agent-response-tool.ts";
-import { PalantirArtifacts } from "./artifacts.ts";
+import { NornAgentResponseCollector } from "./agent-response-tool.ts";
+import { NornArtifacts } from "./artifacts.ts";
 import { errorMessage } from "./errors.ts";
-import { PalantirRunLogs } from "./logs.ts";
-import { PalantirRunLease } from "./run-lease.ts";
-import { PalantirRunLogger } from "./run-log.ts";
-import { PalantirRunStore, runCurrentRoot } from "./run-store.ts";
-import { PalantirRunStateStore, getRunInfo, resolveRunRoot, type PalantirRunState } from "./run-state.ts";
-import { PalantirRunContext } from "./run.ts";
-import { PalantirJsonWorkflowState, PalantirMemoryWorkflowState } from "./state-store.ts";
-import { PalantirWorkflowRegistry, type PalantirRegisteredWorkflow, type PalantirWorkflowStepResult } from "./workflow-registry.ts";
+import { NornRunLogs } from "./logs.ts";
+import { NornRunLease } from "./run-lease.ts";
+import { NornRunLogger } from "./run-log.ts";
+import { NornRunStore, runCurrentRoot } from "./run-store.ts";
+import { NornRunStateStore, getRunInfo, resolveRunRoot, type NornRunState } from "./run-state.ts";
+import { NornRunContext } from "./run.ts";
+import { NornJsonWorkflowState, NornMemoryWorkflowState } from "./state-store.ts";
+import { NornWorkflowRegistry, type NornRegisteredWorkflow, type NornWorkflowStepResult } from "./workflow-registry.ts";
 
-const RUNS_DIR_NAME = ".palantir";
+const RUNS_DIR_NAME = ".norn";
 const STATE_FILE_NAME = "state.json";
 const MANIFEST_FILE_NAME = "manifest.json";
 
-export type PalantirEngineInput = {
+export type NornEngineInput = {
 	readonly cwd: string;
 	readonly agentDir?: string;
 	readonly signal?: AbortSignal;
-	readonly responseCollector?: PalantirAgentResponseCollector;
+	readonly responseCollector?: NornAgentResponseCollector;
 	readonly gateMode?: "auto" | "pause";
 	readonly config?: Record<string, unknown>;
 };
 
 type RunSession = {
 	readonly runRoot: string;
-	readonly run: PalantirRunContext;
-	readonly state: PalantirRunStateStore;
-	readonly lease: PalantirRunLease;
-	readonly runStore: PalantirRunStore;
-	readonly logger: PalantirRunLogger;
+	readonly run: NornRunContext;
+	readonly state: NornRunStateStore;
+	readonly lease: NornRunLease;
+	readonly runStore: NornRunStore;
+	readonly logger: NornRunLogger;
 	readonly activeRun: ActiveRun;
 };
 
@@ -58,23 +58,23 @@ type ActiveRun = {
 };
 
 type WorkflowStep = {
-	readonly workflow: PalantirAnyWorkflowDeclaration;
+	readonly workflow: NornAnyWorkflowDeclaration;
 	readonly params: unknown;
-	readonly interruption?: NonNullable<PalantirRunState["current"]>["interruption"];
+	readonly interruption?: NonNullable<NornRunState["current"]>["interruption"];
 };
 
-export class PalantirEngine {
-	private readonly registry = new PalantirWorkflowRegistry();
-	private readonly registrarState = new PalantirMemoryWorkflowState();
-	private readonly disposersByPlugin = new Map<string, PalantirDispose[]>();
-	private readonly responseCollector: PalantirAgentResponseCollector;
+export class NornEngine {
+	private readonly registry = new NornWorkflowRegistry();
+	private readonly registrarState = new NornMemoryWorkflowState();
+	private readonly disposersByPlugin = new Map<string, NornDispose[]>();
+	private readonly responseCollector: NornAgentResponseCollector;
 	private readonly activeRuns = new Map<string, ActiveRun>();
 
-	constructor(private readonly input: PalantirEngineInput) {
-		this.responseCollector = input.responseCollector ?? new PalantirAgentResponseCollector();
+	constructor(private readonly input: NornEngineInput) {
+		this.responseCollector = input.responseCollector ?? new NornAgentResponseCollector();
 	}
 
-	registerPlugin<TManifest extends PalantirAnyWorkflowPluginManifest>(plugin: PalantirWorkflowPlugin<TManifest>): PalantirDispose {
+	registerPlugin<TManifest extends NornAnyWorkflowPluginManifest>(plugin: NornWorkflowPlugin<TManifest>): NornDispose {
 		this.disposePlugin(plugin.manifest.id);
 		const implementation = this.resolvePluginImplementation(plugin.implementation);
 		const disposers = Object.entries(plugin.manifest.workflows).map(([key, workflow]) => {
@@ -92,23 +92,23 @@ export class PalantirEngine {
 		return this.registry.list();
 	}
 
-	visibleWorkflowEntries(): PalantirRegisteredWorkflow[] {
+	visibleWorkflowEntries(): NornRegisteredWorkflow[] {
 		return this.registry.launchableEntries();
 	}
 
-	private resolvePluginImplementation<TManifest extends PalantirAnyWorkflowPluginManifest>(
-		implementationInput: PalantirWorkflowPluginImplementationInput<TManifest>,
-	): PalantirWorkflowPluginImplementation<TManifest> {
+	private resolvePluginImplementation<TManifest extends NornAnyWorkflowPluginManifest>(
+		implementationInput: NornWorkflowPluginImplementationInput<TManifest>,
+	): NornWorkflowPluginImplementation<TManifest> {
 		return typeof implementationInput === "function"
 			? implementationInput({ cwd: this.input.cwd, state: this.registrarState })
 			: implementationInput;
 	}
 
-	async runWorkflow<TWorkflow extends PalantirAnyWorkflowDeclaration>(
+	async runWorkflow<TWorkflow extends NornAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		params: unknown,
-		options: PalantirRunStartOptions | undefined,
-	): Promise<PalantirRunResult> {
+		options: NornRunStartOptions | undefined,
+	): Promise<NornRunResult> {
 		const session = await this.createRunSession(workflow, params, options);
 		return this.runScheduler(session, {
 			workflow,
@@ -116,16 +116,16 @@ export class PalantirEngine {
 		});
 	}
 
-	async listRunCheckpoints(path: string): Promise<PalantirRunCheckpoint[]> {
+	async listRunCheckpoints(path: string): Promise<NornRunCheckpoint[]> {
 		const runRoot = await resolveRunRoot(this.input.cwd, path);
-		return (await PalantirRunStore.open(runRoot)).listCheckpoints();
+		return (await NornRunStore.open(runRoot)).listCheckpoints();
 	}
 
-	async rollbackRun(path: string, checkpointId: string): Promise<PalantirRunInfo> {
+	async rollbackRun(path: string, checkpointId: string): Promise<NornRunInfo> {
 		const runRoot = await resolveRunRoot(this.input.cwd, path);
-		const lease = await PalantirRunLease.acquire(runRoot);
+		const lease = await NornRunLease.acquire(runRoot);
 		try {
-			const runStore = await PalantirRunStore.open(runRoot);
+			const runStore = await NornRunStore.open(runRoot);
 			await runStore.restoreSnapshot(checkpointId);
 			return getRunInfo(runRoot);
 		} finally {
@@ -133,17 +133,17 @@ export class PalantirEngine {
 		}
 	}
 
-	async resumeWorkflow(path: string, params?: unknown): Promise<PalantirRunResult> {
+	async resumeWorkflow(path: string, params?: unknown): Promise<NornRunResult> {
 		const runRoot = await resolveRunRoot(this.input.cwd, path);
-		const initialStateStore = await PalantirRunStateStore.load(runRoot);
+		const initialStateStore = await NornRunStateStore.load(runRoot);
 		const initialState = initialStateStore.currentState();
 		if (initialState.status === "completed") throw new Error(`Run is already completed: ${runRoot}`);
 		if (initialState.status === "interrupted" && params === undefined) throw new Error(`Interrupted workflow resume requires params: ${runRoot}`);
 
-		const lease = await PalantirRunLease.acquire(runRoot);
+		const lease = await NornRunLease.acquire(runRoot);
 		let isLeaseOwnedByScheduler = false;
 		try {
-			if (initialState.status === "running") await (await PalantirRunStore.open(runRoot)).restoreCurrentSnapshot();
+			if (initialState.status === "running") await (await NornRunStore.open(runRoot)).restoreCurrentSnapshot();
 			const session = await this.openRunSession(runRoot, lease);
 			const state = session.state.currentState();
 			const current = state.current;
@@ -167,7 +167,7 @@ export class PalantirEngine {
 		}
 	}
 
-	private async runScheduler(session: RunSession, initialStep: WorkflowStep): Promise<PalantirRunResult> {
+	private async runScheduler(session: RunSession, initialStep: WorkflowStep): Promise<NornRunResult> {
 		let currentStep = initialStep;
 		try {
 			for (let step = 1; step <= 1_000; step++) {
@@ -215,7 +215,7 @@ export class PalantirEngine {
 		}
 	}
 
-	private async executeWorkflowStep(session: RunSession, step: WorkflowStep, run: PalantirRunContext): Promise<PalantirWorkflowStepResult> {
+	private async executeWorkflowStep(session: RunSession, step: WorkflowStep, run: NornRunContext): Promise<NornWorkflowStepResult> {
 		const boundaryRef = await session.runStore.currentSnapshotRef();
 		const logBoundary = session.logger.boundary();
 		const startedAtMs = Date.now();
@@ -237,7 +237,7 @@ export class PalantirEngine {
 		}
 	}
 
-	private nextWorkflowStep(next: PalantirRunNext): WorkflowStep {
+	private nextWorkflowStep(next: NornRunNext): WorkflowStep {
 		const workflow = this.registry.workflowById(next.workflowId);
 		if (!workflow) throw new Error(`Unknown next workflow: ${next.workflowId}`);
 		return {
@@ -247,10 +247,10 @@ export class PalantirEngine {
 		};
 	}
 
-	private async createRunSession<TWorkflow extends PalantirAnyWorkflowDeclaration>(
+	private async createRunSession<TWorkflow extends NornAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
 		params: unknown,
-		options: PalantirRunStartOptions | undefined,
+		options: NornRunStartOptions | undefined,
 	): Promise<RunSession> {
 		const id = options?.id ?? randomUUID();
 		const name = options?.name ?? id;
@@ -260,12 +260,12 @@ export class PalantirEngine {
 		const cwd = workflowDefaultCwd(this.input.cwd, workspace, workflow);
 		const startedAt = new Date().toISOString();
 		await mkdir(runRoot, { recursive: true });
-		const lease = await PalantirRunLease.acquire(runRoot);
+		const lease = await NornRunLease.acquire(runRoot);
 		const activeRun = this.startActiveRun(runRoot);
 		try {
-			const runStore = await PalantirRunStore.initialize(runRoot);
+			const runStore = await NornRunStore.initialize(runRoot);
 			await mkdir(workspace, { recursive: true });
-			const logger = new PalantirRunLogger(join(currentRoot, MANIFEST_FILE_NAME), {
+			const logger = new NornRunLogger(join(currentRoot, MANIFEST_FILE_NAME), {
 				id,
 				name,
 				workflowId: workflow.id,
@@ -275,7 +275,7 @@ export class PalantirEngine {
 				startedAt,
 			});
 			const run = await this.buildRun({ id, currentRoot, workspace, cwd, isolationMode: workflow.isolation.mode, signal: activeRun.controller.signal, logger });
-			const state = await PalantirRunStateStore.create(runRoot, {
+			const state = await NornRunStateStore.create(runRoot, {
 				id,
 				name,
 				entrypointWorkflowId: workflow.id,
@@ -295,15 +295,15 @@ export class PalantirEngine {
 		}
 	}
 
-	private async openRunSession(runRoot: string, lease: PalantirRunLease): Promise<RunSession> {
+	private async openRunSession(runRoot: string, lease: NornRunLease): Promise<RunSession> {
 		const activeRun = this.startActiveRun(runRoot);
 		try {
-			const state = await PalantirRunStateStore.load(runRoot);
+			const state = await NornRunStateStore.load(runRoot);
 			const currentState = state.currentState();
 			if (currentState.status === "completed") throw new Error(`Run is already completed: ${runRoot}`);
-			const runStore = await PalantirRunStore.open(runRoot);
+			const runStore = await NornRunStore.open(runRoot);
 			const currentRoot = runCurrentRoot(runRoot);
-			const logger = await PalantirRunLogger.load(join(currentRoot, MANIFEST_FILE_NAME));
+			const logger = await NornRunLogger.load(join(currentRoot, MANIFEST_FILE_NAME));
 			const workflow = currentState.current ? this.registry.workflowById(currentState.current.workflowId) : undefined;
 			const isolationMode = workflow?.isolation.mode ?? "runWorkspace";
 			const cwd = workflowDefaultCwd(this.input.cwd, currentState.workspace, workflow);
@@ -322,14 +322,14 @@ export class PalantirEngine {
 		readonly cwd: string;
 		readonly isolationMode: "runWorkspace" | "project";
 		readonly signal: AbortSignal;
-		readonly logger: PalantirRunLogger;
-	}): Promise<PalantirRunContext> {
+		readonly logger: NornRunLogger;
+	}): Promise<NornRunContext> {
 		const artifactsRoot = join(input.currentRoot, "artifacts");
 		const logsRoot = join(input.currentRoot, "logs");
 		await mkdir(input.workspace, { recursive: true });
 		await mkdir(artifactsRoot, { recursive: true });
 		await mkdir(logsRoot, { recursive: true });
-		return new PalantirRunContext({
+		return new NornRunContext({
 			id: input.id,
 			runRoot: input.currentRoot,
 			workspace: input.workspace,
@@ -339,10 +339,10 @@ export class PalantirEngine {
 			signal: input.signal,
 			agentDir: this.input.agentDir,
 			responseCollector: this.responseCollector,
-			state: new PalantirJsonWorkflowState(join(input.currentRoot, STATE_FILE_NAME)),
+			state: new NornJsonWorkflowState(join(input.currentRoot, STATE_FILE_NAME)),
 			logger: input.logger,
-			artifacts: new PalantirArtifacts(artifactsRoot),
-			logs: new PalantirRunLogs(logsRoot),
+			artifacts: new NornArtifacts(artifactsRoot),
+			logs: new NornRunLogs(logsRoot),
 		});
 	}
 
@@ -390,11 +390,11 @@ function defaultRunRoot(cwd: string, id: string): string {
 	return join(cwd, RUNS_DIR_NAME, "runs", id);
 }
 
-function workflowDefaultCwd(projectRoot: string, workspace: string, workflow: PalantirAnyWorkflowDeclaration | undefined): string {
+function workflowDefaultCwd(projectRoot: string, workspace: string, workflow: NornAnyWorkflowDeclaration | undefined): string {
 	return workflow?.isolation.mode === "project" ? projectRoot : workspace;
 }
 
-function toWorkflowStep(workflow: PalantirAnyWorkflowDeclaration, step: NonNullable<PalantirRunState["current"]>): WorkflowStep {
+function toWorkflowStep(workflow: NornAnyWorkflowDeclaration, step: NonNullable<NornRunState["current"]>): WorkflowStep {
 	return {
 		workflow,
 		params: step.params,
@@ -402,7 +402,7 @@ function toWorkflowStep(workflow: PalantirAnyWorkflowDeclaration, step: NonNulla
 	};
 }
 
-function toRunStateStep(step: WorkflowStep): NonNullable<PalantirRunState["current"]> {
+function toRunStateStep(step: WorkflowStep): NonNullable<NornRunState["current"]> {
 	return {
 		workflowId: step.workflow.id,
 		params: step.params,
@@ -423,7 +423,7 @@ function throwIfRunAborted(activeRun: ActiveRun): void {
 	throw new Error(typeof reason === "string" && reason.length > 0 ? reason : "Run aborted");
 }
 
-function interruptedLaunchResult(run: RunIdentity, workflow: PalantirAnyWorkflowDeclaration, params: unknown, interruption: { readonly description?: string; readonly fields?: readonly string[] }): PalantirInterruptedRunResult {
+function interruptedLaunchResult(run: RunIdentity, workflow: NornAnyWorkflowDeclaration, params: unknown, interruption: { readonly description?: string; readonly fields?: readonly string[] }): NornInterruptedRunResult {
 	if (!workflow.gate) throw new Error(`Workflow is not gated: ${workflow.id}`);
 	if (!interruption.description) throw new Error(`Interrupted workflow is missing description: ${workflow.id}`);
 	return {

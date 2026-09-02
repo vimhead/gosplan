@@ -5,7 +5,7 @@ import { writeJsonAtomically } from "./json-file.ts";
 export const LAUNCH_REQUEST_FILE_NAME = "launch-request.json";
 export const RESUME_REQUEST_FILE_NAME = "resume-request.json";
 
-export type PalantirRunLaunchRequest = {
+export type NornRunLaunchRequest = {
 	readonly version: 1;
 	readonly type: "run";
 	readonly id: string;
@@ -16,7 +16,7 @@ export type PalantirRunLaunchRequest = {
 	readonly createdAt: string;
 };
 
-export type PalantirRunResumeRequest = {
+export type NornRunResumeRequest = {
 	readonly version: 1;
 	readonly type: "resume";
 	readonly id: string;
@@ -24,38 +24,38 @@ export type PalantirRunResumeRequest = {
 	readonly createdAt: string;
 };
 
-export async function writeRunLaunchRequest(runRoot: string, request: PalantirRunLaunchRequest): Promise<void> {
+export async function writeRunLaunchRequest(runRoot: string, request: NornRunLaunchRequest): Promise<void> {
 	await writeJsonAtomically(join(runRoot, LAUNCH_REQUEST_FILE_NAME), request);
 }
 
-export async function readRunLaunchRequest(runRoot: string): Promise<PalantirRunLaunchRequest> {
+export async function readRunLaunchRequest(runRoot: string): Promise<NornRunLaunchRequest> {
 	return parseRunLaunchRequest(JSON.parse(await readFile(join(runRoot, LAUNCH_REQUEST_FILE_NAME), "utf8")));
 }
 
-export async function writeRunResumeRequest(runRoot: string, request: PalantirRunResumeRequest): Promise<void> {
+export async function writeRunResumeRequest(runRoot: string, request: NornRunResumeRequest): Promise<void> {
 	await writeJsonAtomically(join(runRoot, RESUME_REQUEST_FILE_NAME), request);
 }
 
-export async function readRunResumeRequest(runRoot: string): Promise<PalantirRunResumeRequest> {
+export async function readRunResumeRequest(runRoot: string): Promise<NornRunResumeRequest> {
 	return parseRunResumeRequest(JSON.parse(await readFile(join(runRoot, RESUME_REQUEST_FILE_NAME), "utf8")));
 }
 
-function parseRunLaunchRequest(value: unknown): PalantirRunLaunchRequest {
+function parseRunLaunchRequest(value: unknown): NornRunLaunchRequest {
 	if (!value || typeof value !== "object") throw new Error("Invalid workflow launch request");
-	const request = value as Partial<PalantirRunLaunchRequest>;
+	const request = value as Partial<NornRunLaunchRequest>;
 	if (request.version !== 1 || request.type !== "run") throw new Error("Unsupported workflow launch request");
 	if (typeof request.id !== "string" || request.id.length === 0) throw new Error("Invalid workflow launch request id");
 	if (typeof request.name !== "string" || request.name.length === 0) throw new Error("Invalid workflow launch request name");
 	if (typeof request.workflowId !== "string" || request.workflowId.length === 0) throw new Error("Invalid workflow launch request workflow id");
 	if (typeof request.createdAt !== "string" || Number.isNaN(Date.parse(request.createdAt))) throw new Error("Invalid workflow launch request timestamp");
-	return request as PalantirRunLaunchRequest;
+	return request as NornRunLaunchRequest;
 }
 
-function parseRunResumeRequest(value: unknown): PalantirRunResumeRequest {
+function parseRunResumeRequest(value: unknown): NornRunResumeRequest {
 	if (!value || typeof value !== "object") throw new Error("Invalid workflow resume request");
-	const request = value as Partial<PalantirRunResumeRequest>;
+	const request = value as Partial<NornRunResumeRequest>;
 	if (request.version !== 1 || request.type !== "resume") throw new Error("Unsupported workflow resume request");
 	if (typeof request.id !== "string" || request.id.length === 0) throw new Error("Invalid workflow resume request id");
 	if (typeof request.createdAt !== "string" || Number.isNaN(Date.parse(request.createdAt))) throw new Error("Invalid workflow resume request timestamp");
-	return request as PalantirRunResumeRequest;
+	return request as NornRunResumeRequest;
 }

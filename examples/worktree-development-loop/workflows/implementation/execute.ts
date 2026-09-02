@@ -1,12 +1,12 @@
-import type { PalantirRunNext, PalantirRun } from "palantir";
+import type { NornRunNext, NornRun } from "norn";
 import { worktreeDevelopmentLoopManifest } from "../../manifest.ts";
 import { ensureCommandSucceeded } from "../../shared/commands.ts";
 import { implementationAgentResponseSchema, type ImplementationParams } from "./schema.ts";
 
 export async function executeImplementationWorkflow(
-	run: PalantirRun,
+	run: NornRun,
 	params: ImplementationParams,
-): Promise<PalantirRunNext> {
+): Promise<NornRunNext> {
 	const repositoryPath = await run.state.get(worktreeDevelopmentLoopManifest.states.developmentLoop.repositoryPath);
 	const planArtifact = await run.state.get(worktreeDevelopmentLoopManifest.states.planning.planArtifact);
 	const plan = await run.artifacts.read(planArtifact);

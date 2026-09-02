@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { PalantirRunHealth } from "../api.ts";
+import type { NornRunHealth } from "../api.ts";
 import { isNodeError } from "./errors.ts";
 import { writeJsonAtomically } from "./json-file.ts";
 
@@ -11,7 +11,7 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 const HEARTBEAT_TTL_MS = 60_000;
 const ACQUIRE_ATTEMPTS = 5;
 
-export type PalantirRunLeaseOwner = {
+export type NornRunLeaseOwner = {
 	readonly token: string;
 	readonly acquiredAt: string;
 	readonly heartbeatAt: string;
@@ -20,7 +20,7 @@ export type PalantirRunLeaseOwner = {
 	readonly command: readonly string[];
 };
 
-export class PalantirRunLease {
+export class NornRunLease {
 	private heartbeat: ReturnType<typeof setInterval> | undefined;
 	private heartbeatChain: Promise<void> = Promise.resolve();
 	private isReleased = false;
@@ -28,15 +28,15 @@ export class PalantirRunLease {
 	private constructor(
 		private readonly lockRoot: string,
 		private readonly token: string,
-		private readonly processOwner: PalantirRunProcessOwner,
+		private readonly processOwner: NornRunProcessOwner,
 	) {}
 
-	static async acquire(runRoot: string, processOwner: PalantirRunProcessOwner = currentRunProcessOwner()): Promise<PalantirRunLease> {
+	static async acquire(runRoot: string, processOwner: NornRunProcessOwner = currentRunProcessOwner()): Promise<NornRunLease> {
 		const lockRoot = join(runRoot, LOCK_DIR_NAME);
 		for (let attempt = 1; attempt <= ACQUIRE_ATTEMPTS; attempt++) {
 			try {
 				await mkdir(lockRoot);
-				const lease = new PalantirRunLease(lockRoot, randomUUID(), processOwner);
+				const lease = new NornRunLease(lockRoot, randomUUID(), processOwner);
 				try {
 					await lease.writeOwner({ acquiredAt: new Date().toISOString() });
 				} catch (error) {
@@ -98,24 +98,24 @@ export class PalantirRunLease {
 	}
 }
 
-export type PalantirRunProcessOwner = {
+export type NornRunProcessOwner = {
 	readonly pid: number;
 	readonly processGroupId: number;
 	readonly command: readonly string[];
 };
 
-export async function getRunLeaseHealth(runRoot: string): Promise<PalantirRunHealth> {
+export async function getRunLeaseHealth(runRoot: string): Promise<NornRunHealth> {
 	const lockRoot = join(runRoot, LOCK_DIR_NAME);
 	const owner = await readRunLeaseOwner(join(lockRoot, OWNER_FILE_NAME));
 	if (owner) return isRunLeaseStale(owner) ? "unhealthy" : "healthy";
 	return await isRunLeaseDirectoryStale(lockRoot) ? "unhealthy" : "healthy";
 }
 
-export async function getRunLeaseOwner(runRoot: string): Promise<PalantirRunLeaseOwner | undefined> {
+export async function getRunLeaseOwner(runRoot: string): Promise<NornRunLeaseOwner | undefined> {
 	return readRunLeaseOwner(join(runRoot, LOCK_DIR_NAME, OWNER_FILE_NAME));
 }
 
-function currentRunProcessOwner(): PalantirRunProcessOwner {
+function currentRunProcessOwner(): NornRunProcessOwner {
 	return {
 		pid: process.pid,
 		processGroupId: process.pid,
@@ -123,7 +123,7 @@ function currentRunProcessOwner(): PalantirRunProcessOwner {
 	};
 }
 
-async function readRunLeaseOwner(path: string): Promise<PalantirRunLeaseOwner | undefined> {
+async function readRunLeaseOwner(path: string): Promise<NornRunLeaseOwner | undefined> {
 	try {
 		return parseRunLeaseOwner(JSON.parse(await readFile(path, "utf8")));
 	} catch (error) {
@@ -132,9 +132,9 @@ async function readRunLeaseOwner(path: string): Promise<PalantirRunLeaseOwner | 
 	}
 }
 
-function parseRunLeaseOwner(value: unknown): PalantirRunLeaseOwner | undefined {
+function parseRunLeaseOwner(value: unknown): NornRunLeaseOwner | undefined {
 	if (!value || typeof value !== "object") return undefined;
-	const owner = value as Partial<PalantirRunLeaseOwner>;
+	const owner = value as Partial<NornRunLeaseOwner>;
 	if (typeof owner.token !== "string" || owner.token.length === 0) return undefined;
 	if (typeof owner.acquiredAt !== "string" || Number.isNaN(Date.parse(owner.acquiredAt))) return undefined;
 	if (typeof owner.heartbeatAt !== "string" || Number.isNaN(Date.parse(owner.heartbeatAt))) return undefined;
@@ -144,7 +144,7 @@ function parseRunLeaseOwner(value: unknown): PalantirRunLeaseOwner | undefined {
 	return { token: owner.token, acquiredAt: owner.acquiredAt, heartbeatAt: owner.heartbeatAt, pid, processGroupId, command };
 }
 
-function isRunLeaseStale(owner: PalantirRunLeaseOwner): boolean {
+function isRunLeaseStale(owner: NornRunLeaseOwner): boolean {
 	return Date.now() - Date.parse(owner.heartbeatAt) > HEARTBEAT_TTL_MS;
 }
 
