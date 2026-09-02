@@ -10,7 +10,20 @@ not the scheduler.
 npm install github:vimhead/palantir
 ```
 
-Install the public GitHub CLI globally:
+Install the native CLI from the rolling GitHub `tip` release:
+
+```bash
+curl -fsSL https://github.com/vimhead/palantir/releases/download/tip/install.sh | sh
+palantir project inspect
+```
+
+Set `PALANTIR_INSTALL_DIR` to choose the destination:
+
+```bash
+curl -fsSL https://github.com/vimhead/palantir/releases/download/tip/install.sh | PALANTIR_INSTALL_DIR=/usr/local/bin sh
+```
+
+Install the public GitHub CLI globally with npm:
 
 ```bash
 npm install -g github:vimhead/palantir
@@ -36,8 +49,8 @@ palantir project inspect
 
 The native binary uses Bun at build time and does not require Node at runtime.
 Every successful `Test` workflow run on `main` updates the rolling GitHub
-prerelease tagged `tip` with `palantir-tip.tgz`, platform binaries,
-per-asset `.sha256` files, and `SHA256SUMS.txt`. Release binaries embed
+prerelease tagged `tip` with `install.sh`, `palantir-tip.tgz`, platform
+binaries, per-asset `.sha256` files, and `SHA256SUMS.txt`. Release binaries embed
 explicit build metadata for `palantir version` and `palantir upgrade`.
 
 ## Features

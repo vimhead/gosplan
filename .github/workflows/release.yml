@@ -88,10 +88,15 @@ jobs:
           build_binary bun-darwin-arm64 palantir-darwin-arm64
           build_binary bun-windows-x64 palantir-windows-x64.exe
 
+      - name: Copy installer
+        run: |
+          cp scripts/install.sh dist/release/install.sh
+          chmod +x dist/release/install.sh
+
       - name: Write checksums
         run: |
           cd dist/release
-          artifacts=(palantir-*)
+          artifacts=(palantir-* install.sh)
           for file in "${artifacts[@]}"; do
             sha256sum "$file" > "$file.sha256"
           done
