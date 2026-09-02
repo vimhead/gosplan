@@ -2,112 +2,75 @@
 
 Typed, resumable workflow plugins for coding agents.
 
-`norn` owns the workflow API and daemonless run engine. The engine is executed
-through the JSON-native `norn` CLI; host applications embed `norn/client`,
-not the scheduler.
+Norn gives a project a small workflow runtime, a TypeScript API for workflow
+plugins, and a JSON-native CLI for discovery, execution, inspection, and resume.
 
-```bash
-npm install github:vimhead/norn
-```
+Contents:
 
-Install the native CLI from the rolling GitHub `tip` release:
+- [Setting up a Norn project](#setting-up-a-norn-project)
+- [Writing workflows](#writing-workflows)
+- [Using the CLI](#using-the-cli)
+
+## Setting up a Norn project
+
+Install the CLI from the rolling `tip` release:
 
 ```bash
 curl -fsSL https://github.com/vimhead/norn/releases/download/tip/install.sh | sh
-norn project inspect
+norn version
 ```
 
-Set `NORN_INSTALL_DIR` to choose the destination:
+Use `NORN_INSTALL_DIR` when the binary should be installed somewhere other than
+`~/.local/bin`:
 
 ```bash
 curl -fsSL https://github.com/vimhead/norn/releases/download/tip/install.sh | NORN_INSTALL_DIR=/usr/local/bin sh
 ```
 
-Install the public GitHub CLI globally with npm:
+You can also install from GitHub with npm:
 
 ```bash
+npm install github:vimhead/norn
+# or
 npm install -g github:vimhead/norn
-norn project inspect
 ```
 
-Build a downloadable npm tarball for GitHub Releases:
-
-```bash
-npm run release:pack
-```
-
-The tarball includes the Pi coding-agent SDK so installed CLIs can run workflows
-that call `run.agents.*` without requiring a separate Pi package install.
-
-Build a self-contained native CLI for the current platform:
-
-```bash
-npm run release:binary
-cp dist/norn /usr/local/bin/norn
-norn project inspect
-```
-
-The native binary uses Bun at build time and does not require Node at runtime.
-Every successful `Test` workflow run on `main` updates the rolling GitHub
-prerelease tagged `tip` with `install.sh`, `norn-tip.tgz`, platform
-binaries, per-asset `.sha256` files, and `SHA256SUMS.txt`. Release binaries embed
-explicit build metadata for `norn version` and `norn upgrade`.
-
-## Features
-
-- Typed plugin manifests and executable plugins.
-- Project discovery through `norn.project.json`.
-- Reusable workflow/plugin discovery through included `norn.json` files.
-- Detached workflow execution with `norn execute-run <run-id>`.
-- JSON command output and NDJSON log/event streams.
-- Human-readable run names such as `quiet-river-lantern`.
-- Explicit workflow controls: `run.next`, `run.complete`, `run.fail`.
-- Resumable runs under `<project-root>/.norn/runs/<run-id>`.
-- CAS checkpoints for rollback and resume.
-- Workflow isolation through `runWorkspace` and `project` modes.
-- Typed state, artifacts, command logs, and Pi SDK agent calls.
-- Gates that pause before a target workflow and edit normal params.
-
-## Register plugins
-
-Initialize a project root:
+Create a project marker:
 
 ```bash
 norn project init
 ```
 
-`norn project init` creates `norn.project.json` and `.norn/runs/` in
-the current directory. Norn discovers projects by walking upward to the
-nearest `norn.project.json`; reusable `norn.json` files are loaded only
-when the project includes them.
+This creates `norn.project.json` and `.norn/runs/`. Norn finds a project by
+walking up to the nearest `norn.project.json`.
 
-Create a reusable workflow config:
-
-```json
-{
-  "plugins": ["./norn/plugin.ts"]
-}
-```
-
-Include it from `norn.project.json` and keep project-specific plugin config
-there:
+A project file includes reusable workflow configs and owns project-specific
+plugin config:
 
 ```json
 {
   "version": 1,
-  "includes": ["./norn.json"],
+  "includes": ["./packages/workflows/norn.json"],
   "config": {
-    "example": {}
+    "example": {
+      "repositoryRoot": "."
+    }
   }
 }
 ```
 
-Plugin paths are resolved relative to the included `norn.json`. Project
-config is keyed by plugin id and validated against each plugin manifest config
-schema. Each plugin module must default-export the plugin.
+A reusable `norn.json` lists plugin modules:
 
-For multiple plugin packages, aggregate package-local configs with explicit
-includes:
+```json
+{
+  "plugins": ["./plugin.ts"]
+}
+```
+
+Plugin paths are resolved relative to the `norn.json` that declares them. Project
+config is keyed by plugin id and validated by the plugin manifest.
+
+For multiple packages, include package-local configs explicitly:
 
 ```json
 {
@@ -116,25 +79,9 @@ includes:
 }
 ```
 
-Included configs can declare their own `plugins` and `includes`. `*` matches one
-directory segment; Norn does not perform blind downward scanning.
+`*` matches one directory segment. Norn does not scan the whole tree by default.
 
-## Examples
-
-The repository includes runnable examples under `examples/`, including
-`examples/worktree-development-loop`.
-
-```bash
-cd examples/worktree-development-loop
-norn project inspect
-norn workflows inspect worktreeDevelopmentLoop.developmentLoop
-```
-
-## Seer mode config
-
-Projects can declare a Seer mode write boundary in `norn.project.json`.
-Norn resolves each writable root relative to the project root and rejects
-roots that escape the project root.
+Projects that use Seer mode can declare writable project-relative roots:
 
 ```json
 {
@@ -146,16 +93,17 @@ roots that escape the project root.
 }
 ```
 
-Inspect the resolved config with:
+Inspect the resolved project before running workflows:
 
 ```bash
-norn seer inspect
+norn project inspect
+norn workflows list
 ```
 
-## Define workflows
+## Writing workflows
 
-Workflow files export plain objects. The manifest key becomes the default fully
-qualified id.
+A workflow is a declaration object with params, entrypoint visibility, and an
+optional isolation mode.
 
 ```ts
 import { z } from "zod";
@@ -163,25 +111,14 @@ import type { NornWorkflowDefinition } from "norn";
 
 export const planWorkflow = {
   title: "Plan",
+  description: "Create an implementation plan for a coding task.",
   isEntrypoint: true,
   params: z.object({ task: z.string() }),
 } as const satisfies NornWorkflowDefinition;
 ```
 
-Explicit ids are allowed only when fully qualified with the plugin id.
-
-```ts
-export const legacyWorkflow = {
-  id: "example.oldPlan",
-  title: "Plan",
-  isEntrypoint: true,
-  params,
-} as const satisfies NornWorkflowDefinition;
-```
-
-## Define a manifest
-
-State leaves can be raw Zod schemas. State ids are derived from the tree path.
+A manifest gives the plugin an id, binds workflow declarations, and can define
+typed state leaves:
 
 ```ts
 import { definePluginManifest, workflowArtifactRefSchema } from "norn";
@@ -200,12 +137,9 @@ export const manifest = definePluginManifest({
     },
   },
 });
-
-manifest.workflows.plan.id; // "example.plan"
-manifest.states.planning.planArtifact.id; // "example.planning.planArtifact"
 ```
 
-## Bind implementations
+A plugin binds each manifest workflow to an implementation:
 
 ```ts
 import { definePlugin } from "norn";
@@ -220,11 +154,13 @@ export default definePlugin(manifest, {
           cwd: run.path(config.repositoryRoot),
           command: "git status --short",
         });
-        const ref = await run.artifacts.write("plan.md", params.task);
-        await run.state.set(manifest.states.planning.planArtifact, ref);
+
+        const plan = await run.artifacts.write("plan.md", params.task);
+        await run.state.set(manifest.states.planning.planArtifact, plan);
+
         return run.complete({
           summary: "Plan created.",
-          artifacts: { plan: ref },
+          artifacts: { plan },
           logs: { status: status.stdoutLog },
         });
       },
@@ -233,46 +169,8 @@ export default definePlugin(manifest, {
 });
 ```
 
-## Workflow isolation
-
-Workflow declarations default to `runWorkspace` isolation. `run.path(...)`,
-command cwd, and agent cwd must stay inside the run workspace.
-
-```ts
-export const implementWorkflow = {
-  title: "Implement",
-  isEntrypoint: false,
-  params,
-  isolation: { mode: "runWorkspace" },
-} as const satisfies NornWorkflowDefinition;
-```
-
-Use `project` isolation for workflows that intentionally inspect or verify files
-inside the Norn project root. Project-isolated implementations receive
-project-only helpers at the type level.
-
-```ts
-export const verifyWorkflow = {
-  title: "Verify",
-  isEntrypoint: true,
-  params,
-  isolation: { mode: "project" },
-} as const satisfies NornWorkflowDefinition;
-
-async function execute(run: NornProjectRun) {
-  await run.commands.run({
-    label: "test",
-    cwd: run.projectPath("packages/app"),
-    command: "npm test",
-  });
-}
-```
-
-## Chain workflows
-
-Workflows never call each other directly. They return scheduler controls. Routing
-only carries workflow id and params; target workflows choose their own cwd from
-params, state, config, and their isolation mode.
+Workflow implementations return scheduler controls instead of calling other
+workflows directly:
 
 ```ts
 return run.next(manifest.workflows.implement, {
@@ -285,132 +183,98 @@ return run.complete({ summary: "Accepted after review." });
 return run.fail({ summary: "Blocked by missing credentials." });
 ```
 
-Outcome metadata is persisted in `current/run-state.json`. Keep it small:
-use it as a table of contents for artifacts, logs, and state.
-
-## Run workflows
-
-The CLI is JSON-native except for concise human-readable `help` output.
-
-```bash
-norn help
-
-norn help runs start
-
-norn commands list
-
-norn commands inspect runs.start
-
-norn version
-
-norn upgrade --dry-run
-
-norn project inspect
-
-norn workflows list
-
-norn workflows list --all
-
-norn workflows inspect example.plan
-
-echo '{"params":{"task":"Add tests"}}' | norn runs start example.plan
-
-norn runs list
-
-norn runs wait quiet-river-lantern
-
-norn runs logs quiet-river-lantern --follow
-
-norn runs metrics quiet-river-lantern
-
-norn runs stop quiet-river-lantern
-
-norn runs delete quiet-river-lantern
-
-echo '{"params":{"decision":"accept"}}' | norn runs resume quiet-river-lantern
-```
-
-`help` and `--help` return concise human-readable command help. `commands list` and `commands inspect <id>` return JSON with agent-oriented command descriptions, usage, inputs, outputs, and examples. `version` returns the package version and a discriminated `build` object. Builds without explicit upgrade metadata use `build.kind: "unknown"`, and `upgrade` returns an unsupported JSON result instead of guessing the install source.
-
-`project inspect` returns resolved config files, plugin config schemas, plugin config values, and Seer mode. `workflows list` returns entrypoint workflows by default; pass `--all` to include internal workflow steps. `workflows inspect <id>` returns params JSON Schema, gate, and plugin source info. `start` reads `{"params":{...},"config":{"pluginId":{...}}}` from stdin and `resume` reads `{"params":{...}}` from stdin; no-params workflows can omit stdin. `start` and `resume` start detached execution and return immediately with run JSON.
-Use `runs wait` to block until a run is no longer active; it returns the same run shape as `runs inspect`. Interrupted runs include `run.interruption` with the paused workflow id, editable params, description, and fields. Completed or failed runs include `run.outcome`; failed runs also include `run.failed`. Use the stable id, generated name, or run path for later commands. `runs metrics` reports run totals plus per-workflow, per-agent, and per-command timing, token usage, and cost. Delete is allowed only after a run is no longer running.
-
-## TypeScript client
+Use the default `runWorkspace` isolation for workflows that should operate inside
+a per-run workspace. Use `project` isolation only for workflows that must inspect
+or verify files in the project root:
 
 ```ts
-import { createNornClient } from "norn/client";
-
-const client = createNornClient({ spawnCwd: process.cwd() });
-const workflows = await client.workflows.list();
-const run = await client.runs.start({
-  workflowId: "example.plan",
-  params: { task: "Add tests" },
-});
-
-for await (const event of client.runs.logs(run.name, { follow: true })) {
-  console.log(event);
-}
+export const verifyWorkflow = {
+  title: "Verify",
+  description: "Run project verification.",
+  isEntrypoint: true,
+  isolation: { mode: "project" },
+  params,
+} as const satisfies NornWorkflowDefinition;
 ```
 
-## Gates
-
-A target workflow can mark normal params as editable before execution.
-`fields` is typed to top-level params. If omitted, all params are editable.
+A gate pauses before a workflow and lets selected top-level params be edited
+before execution:
 
 ```ts
-const reviewRouterParamsSchema = z.object({
-  decision: z.enum(["accept", "revise", "blocked"]),
-  notes: z.string(),
-  diffArtifact: workflowArtifactRefSchema,
-});
-
-export const reviewRouterWorkflow = {
+export const reviewWorkflow = {
+  title: "Review",
+  description: "Approve, revise, or block a proposed change.",
   isEntrypoint: false,
   gate: {
     enabled: true,
     fields: ["decision", "notes"] as const,
   },
-  params: reviewRouterParamsSchema,
+  params: reviewParamsSchema,
 } as const satisfies NornWorkflowDefinition;
 ```
 
-Dynamic gate descriptions live in the implementation and are persisted when the
-run pauses.
+## Using the CLI
 
-```ts
-reviewRouter: {
-  gate: {
-    async describe(run, params) {
-      const ref = await run.state.get(manifest.states.planning.planArtifact);
-      return `Review ${params.diffArtifact.path} against ${ref.path}.`;
-    },
-  },
-  execute: executeReviewRouter,
-}
+Norn commands produce JSON unless they are help commands.
+
+```bash
+norn help
+norn help runs start
+norn commands list
+norn commands inspect runs.start
 ```
 
-## Run storage
+Discover the current project and available workflows:
 
-Each run is split into immutable CAS storage and the current materialized state.
-
-```text
-.norn/runs/<run-id>/
-  active.lock/
-    owner.json
-  store/
-    objects/sha256/.../*.gz
-    snapshots/<checkpoint-id>.json
-    refs/current
-  current/
-    checkpoints.json
-    run-state.json
-    manifest.json
-    state.json
-    logs/
-    artifacts/
-    sessions/
-    workspace/
+```bash
+norn project inspect
+norn workflows list
+norn workflows list --all
+norn workflows inspect example.plan
 ```
 
-The engine snapshots all of `current/` at boundaries. Rollback restores the
-saved snapshot exactly, including nested repositories inside `workspace/`.
+Start a workflow by passing params through stdin:
+
+```bash
+printf '{"params":{"task":"Add tests"}}' | norn runs start example.plan
+```
+
+The start command returns a run id and generated name. Use either value in later
+commands:
+
+```bash
+norn runs list
+norn runs inspect quiet-river-lantern
+norn runs wait quiet-river-lantern
+norn runs logs quiet-river-lantern
+norn runs logs quiet-river-lantern --follow
+norn runs metrics quiet-river-lantern
+```
+
+Resume an interrupted run by passing the updated params through stdin:
+
+```bash
+printf '{"params":{"decision":"accept","notes":"Looks good"}}' | norn runs resume quiet-river-lantern
+```
+
+Use checkpoints when a run needs to retry from earlier evidence:
+
+```bash
+norn runs checkpoints quiet-river-lantern
+norn runs rollback quiet-river-lantern checkpoint-1
+```
+
+Stop or delete inactive runs explicitly:
+
+```bash
+norn runs stop quiet-river-lantern
+norn runs kill quiet-river-lantern
+norn runs delete quiet-river-lantern
+```
+
+Check the installed version and supported upgrade path:
+
+```bash
+norn version
+norn upgrade --dry-run
+```
