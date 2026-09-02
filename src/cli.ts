@@ -17,6 +17,274 @@ import { getRunInfo, listRuns, resolveRunRoot } from "./internal/run-state.ts";
 const RUNS_ROOT = join(".palantir", "runs");
 const RUN_WAIT_INTERVAL_MS = 1000;
 
+const COMMANDS: readonly CliCommand[] = [
+	{
+		id: "commands.list",
+		path: ["commands", "list"],
+		description: "Use when an agent or human needs machine-readable Palantir CLI command metadata.",
+		usage: "palantir commands list [--all] [--json]",
+		options: ["--all: include hidden internal commands", "--json: accepted for explicit machine-readable output"],
+		output: "JSON object with command metadata under commands.",
+		examples: ["palantir commands list --json", "palantir commands list --all"],
+		execute: listCliCommands,
+	},
+	{
+		id: "commands.inspect",
+		path: ["commands", "inspect"],
+		description: "Use when an agent or human needs the usage contract for one Palantir CLI command.",
+		usage: "palantir commands inspect <command-id> [--json]",
+		arguments: ["command-id: command metadata id such as runs.start"],
+		options: ["--json: accepted for explicit machine-readable output"],
+		output: "JSON object with one command metadata object under command.",
+		examples: ["palantir commands inspect runs.start --json"],
+		execute: inspectCliCommand,
+	},
+	{
+		id: "project.inspect",
+		path: ["project", "inspect"],
+		description: "Use when discovering the active Palantir project config, plugins, workflow sources, and Seer mode.",
+		usage: "palantir project inspect",
+		output: "JSON object with project metadata under project.",
+		examples: ["palantir project inspect"],
+		execute: async (args) => {
+			assertNoExtraArgs("project inspect", args);
+			await inspectProject();
+		},
+	},
+	{
+		id: "seer.inspect",
+		path: ["seer", "inspect"],
+		description: "Use when checking the current project's resolved Seer mode before agent execution.",
+		usage: "palantir seer inspect",
+		output: "JSON object with resolved Seer mode under seerMode.",
+		examples: ["palantir seer inspect"],
+		execute: async (args) => {
+			assertNoExtraArgs("seer inspect", args);
+			await inspectSeerMode();
+		},
+	},
+	{
+		id: "workflows.list",
+		path: ["workflows", "list"],
+		description: "Use when selecting a Palantir workflow for a user task; defaults to entrypoint workflows.",
+		usage: "palantir workflows list [--entrypoints|--all]",
+		options: ["--entrypoints: list entrypoint workflows", "--all: include internal workflow steps"],
+		output: "JSON object with registered workflow summaries under workflows.",
+		examples: ["palantir workflows list", "palantir workflows list --all"],
+		execute: listWorkflows,
+	},
+	{
+		id: "workflows.inspect",
+		path: ["workflows", "inspect"],
+		description: "Use when reading a workflow's params schema, gate contract, description, and source plugin before starting or editing it.",
+		usage: "palantir workflows inspect <workflow-id>",
+		arguments: ["workflow-id: fully qualified workflow id"],
+		output: "JSON object with inspected workflow details under workflow.",
+		examples: ["palantir workflows inspect example.plan"],
+		execute: async (args) => {
+			const workflowId = requiredArg("workflows inspect", args, 0, "workflow id");
+			assertNoExtraArgs("workflows inspect", args.slice(1));
+			await inspectWorkflow(workflowId);
+		},
+	},
+	{
+		id: "runs.start",
+		path: ["runs", "start"],
+		description: "Use when starting a Palantir workflow run after the workflow id and params are known.",
+		usage: "palantir runs start <workflow-id>",
+		arguments: ["workflow-id: fully qualified workflow id to start"],
+		stdin: "Optional JSON object: {\"params\":{...},\"config\":{\"pluginId\":{...}}}.",
+		output: "JSON object with started run info under run.",
+		examples: ["printf '{\"params\":{\"task\":\"Add tests\"}}' | palantir runs start example.plan"],
+		execute: async (args) => {
+			const workflowId = requiredArg("runs start", args, 0, "workflow id");
+			await startRun(workflowId, args.slice(1));
+		},
+	},
+	{
+		id: "runs.resume",
+		path: ["runs", "resume"],
+		description: "Use when resuming a stopped or interrupted Palantir run, including answering an editable gate.",
+		usage: "palantir runs resume <run>",
+		arguments: ["run: run id, generated name, or run path"],
+		stdin: "Optional JSON object: {\"params\":{...}}. Interrupted runs require params.",
+		output: "JSON object with resumed run info under run.",
+		examples: ["printf '{\"params\":{\"decision\":\"accept\"}}' | palantir runs resume quiet-river-lantern"],
+		execute: async (args) => {
+			const run = requiredArg("runs resume", args, 0, "run");
+			await resumeRun(run, args.slice(1));
+		},
+	},
+	{
+		id: "runs.wait",
+		path: ["runs", "wait"],
+		description: "Use when waiting for a Palantir run to finish, fail, interrupt, or become unhealthy.",
+		usage: "palantir runs wait <run>",
+		arguments: ["run: run id, generated name, or run path"],
+		output: "JSON object with final or current run info under run.",
+		examples: ["palantir runs wait quiet-river-lantern"],
+		execute: async (args) => {
+			const run = requiredArg("runs wait", args, 0, "run");
+			assertNoExtraArgs("runs wait", args.slice(1));
+			await waitRun(run);
+		},
+	},
+	{
+		id: "runs.list",
+		path: ["runs", "list"],
+		description: "Use when listing known Palantir runs in the current project.",
+		usage: "palantir runs list",
+		output: "JSON object with run summaries under runs.",
+		examples: ["palantir runs list"],
+		execute: async (args) => {
+			assertNoExtraArgs("runs list", args);
+			writeJson({ runs: await listRuns(process.cwd()) });
+		},
+	},
+	{
+		id: "runs.inspect",
+		path: ["runs", "inspect"],
+		description: "Use when reading status, health, current workflow, interruption, and outcome details for one Palantir run.",
+		usage: "palantir runs inspect <run>",
+		arguments: ["run: run id, generated name, or run path"],
+		output: "JSON object with run details under run.",
+		examples: ["palantir runs inspect quiet-river-lantern"],
+		execute: async (args) => {
+			const run = requiredArg("runs inspect", args, 0, "run");
+			assertNoExtraArgs("runs inspect", args.slice(1));
+			writeJson({ run: await inspectRun(run) });
+		},
+	},
+	{
+		id: "runs.checkpoints",
+		path: ["runs", "checkpoints"],
+		description: "Use when finding rollback points before retrying or repairing a Palantir run.",
+		usage: "palantir runs checkpoints <run>",
+		arguments: ["run: run id, generated name, or run path"],
+		output: "JSON object with checkpoints under checkpoints.",
+		examples: ["palantir runs checkpoints quiet-river-lantern"],
+		execute: async (args) => {
+			const run = requiredArg("runs checkpoints", args, 0, "run");
+			assertNoExtraArgs("runs checkpoints", args.slice(1));
+			const runRoot = await resolveRunRoot(process.cwd(), run);
+			writeJson({ checkpoints: await (await PalantirRunStore.open(runRoot)).listCheckpoints() });
+		},
+	},
+	{
+		id: "runs.metrics",
+		path: ["runs", "metrics"],
+		description: "Use when measuring workflow, agent, command, token, and cost totals for a Palantir run.",
+		usage: "palantir runs metrics <run>",
+		arguments: ["run: run id, generated name, or run path"],
+		output: "JSON object with metrics under metrics.",
+		examples: ["palantir runs metrics quiet-river-lantern"],
+		execute: async (args) => {
+			const run = requiredArg("runs metrics", args, 0, "run");
+			assertNoExtraArgs("runs metrics", args.slice(1));
+			const runRoot = await resolveRunRoot(process.cwd(), run);
+			writeJson({ metrics: await readRunMetrics(runRoot) });
+		},
+	},
+	{
+		id: "runs.logs",
+		path: ["runs", "logs"],
+		description: "Use when streaming or reading chronological JSON events for a Palantir run.",
+		usage: "palantir runs logs <run> [--follow]",
+		arguments: ["run: run id, generated name, or run path"],
+		options: ["--follow: continue streaming until the run stops"],
+		output: "JSON Lines stream of run events.",
+		examples: ["palantir runs logs quiet-river-lantern", "palantir runs logs quiet-river-lantern --follow"],
+		execute: async (args) => {
+			const run = requiredArg("runs logs", args, 0, "run");
+			const logArgs = args.slice(1);
+			assertKnownFlags("runs logs", logArgs, ["--follow"]);
+			await writeRunLogs(run, { follow: logArgs.includes("--follow") });
+		},
+	},
+	{
+		id: "runs.rollback",
+		path: ["runs", "rollback"],
+		description: "Use when restoring a Palantir run to a prior checkpoint before resuming after a fix.",
+		usage: "palantir runs rollback <run> <checkpoint-id>",
+		arguments: ["run: run id, generated name, or run path", "checkpoint-id: checkpoint id from runs.checkpoints"],
+		output: "JSON object with rolled-back run info under run.",
+		examples: ["palantir runs rollback quiet-river-lantern checkpoint-1"],
+		execute: async (args) => {
+			const run = requiredArg("runs rollback", args, 0, "run");
+			await rollbackRun(run, args.slice(1));
+		},
+	},
+	{
+		id: "runs.stop",
+		path: ["runs", "stop"],
+		description: "Use when politely stopping a running Palantir execution process.",
+		usage: "palantir runs stop <run>",
+		arguments: ["run: run id, generated name, or run path"],
+		output: "JSON object with updated run info under run.",
+		examples: ["palantir runs stop quiet-river-lantern"],
+		execute: async (args) => {
+			const run = requiredArg("runs stop", args, 0, "run");
+			assertNoExtraArgs("runs stop", args.slice(1));
+			await signalRun(run, "SIGTERM");
+		},
+	},
+	{
+		id: "runs.kill",
+		path: ["runs", "kill"],
+		description: "Use when force-stopping a Palantir execution process that did not stop politely.",
+		usage: "palantir runs kill <run>",
+		arguments: ["run: run id, generated name, or run path"],
+		output: "JSON object with updated run info under run.",
+		examples: ["palantir runs kill quiet-river-lantern"],
+		execute: async (args) => {
+			const run = requiredArg("runs kill", args, 0, "run");
+			assertNoExtraArgs("runs kill", args.slice(1));
+			await signalRun(run, "SIGKILL");
+		},
+	},
+	{
+		id: "runs.delete",
+		path: ["runs", "delete"],
+		description: "Use when deleting an inactive Palantir run directory after evidence is no longer needed.",
+		usage: "palantir runs delete <run>",
+		arguments: ["run: run id, generated name, or run path"],
+		output: "JSON object with deleted run identity under deleted.",
+		examples: ["palantir runs delete quiet-river-lantern"],
+		execute: async (args) => {
+			const run = requiredArg("runs delete", args, 0, "run");
+			assertNoExtraArgs("runs delete", args.slice(1));
+			writeJson({ deleted: await deleteRun(run) });
+		},
+	},
+	{
+		id: "execute-run",
+		path: ["execute-run"],
+		description: "Use internally when executing a previously launched detached run request.",
+		usage: "palantir execute-run <run-id>",
+		arguments: ["run-id: internal run id"],
+		output: "No stable stdout contract; execution state is persisted in the run directory.",
+		hidden: true,
+		examples: ["palantir execute-run 00000000-0000-0000-0000-000000000000"],
+		execute: async (args) => {
+			const runId = requiredArg("execute-run", args, 0, "run id");
+			assertNoExtraArgs("execute-run", args.slice(1));
+			await executeRun(runId);
+		},
+	},
+	{
+		id: "version",
+		path: ["version"],
+		description: "Use when checking the installed Palantir CLI version.",
+		usage: "palantir version",
+		output: "JSON object with package version under version.",
+		examples: ["palantir version", "palantir --version"],
+		execute: async (args) => {
+			assertNoExtraArgs("version", args);
+			writeJson({ version: await readPackageVersion() });
+		},
+	},
+];
+
 export async function main(args: readonly string[]): Promise<void> {
 	try {
 		await runCommand(args);
@@ -27,81 +295,170 @@ export async function main(args: readonly string[]): Promise<void> {
 }
 
 async function runCommand(args: readonly string[]): Promise<void> {
-	const [command, subcommand, ...rest] = args;
-	if (command === "workflows" && subcommand === "list") {
-		await listWorkflows(rest);
+	if (args.length === 0) {
+		writeCliHelp([]);
 		return;
 	}
-	if (command === "workflows" && subcommand === "inspect" && rest[0]) {
-		await inspectWorkflow(rest[0]);
+	if (isVersionRequest(args)) {
+		writeJson({ version: await readPackageVersion() });
 		return;
 	}
-	if (command === "project" && subcommand === "inspect") {
-		await inspectProject();
+	const helpPath = cliHelpPath(args);
+	if (helpPath) {
+		writeCliHelp(helpPath);
 		return;
 	}
-	if (command === "seer" && subcommand === "inspect") {
-		await inspectSeerMode();
+	const command = findCliCommand(args);
+	if (!command) throw new Error(`Unknown palantir command: ${args.join(" ")}`);
+	await command.execute(args.slice(command.path.length));
+}
+
+type CliCommand = {
+	readonly id: string;
+	readonly path: readonly string[];
+	readonly description: string;
+	readonly usage: string;
+	readonly arguments?: readonly string[];
+	readonly options?: readonly string[];
+	readonly stdin?: string;
+	readonly output: string;
+	readonly examples: readonly string[];
+	readonly hidden?: true;
+	readonly execute: (args: readonly string[]) => Promise<void> | void;
+};
+
+type CliCommandInfo = Omit<CliCommand, "execute">;
+
+async function listCliCommands(args: readonly string[]): Promise<void> {
+	assertKnownFlags("commands list", args, ["--all", "--json"]);
+	const shouldIncludeHidden = args.includes("--all");
+	writeJson({ commands: COMMANDS.filter((command) => shouldIncludeHidden || !command.hidden).map(cliCommandInfo) });
+}
+
+async function inspectCliCommand(args: readonly string[]): Promise<void> {
+	const commandId = requiredArg("commands inspect", args, 0, "command id");
+	assertKnownFlags("commands inspect", args.slice(1), ["--json"]);
+	const command = COMMANDS.find((candidate) => candidate.id === commandId);
+	if (!command) throw new Error(`Unknown palantir command id: ${commandId}`);
+	writeJson({ command: cliCommandInfo(command) });
+}
+
+function cliCommandInfo(command: CliCommand): CliCommandInfo {
+	return {
+		id: command.id,
+		path: command.path,
+		description: command.description,
+		usage: command.usage,
+		arguments: command.arguments,
+		options: command.options,
+		stdin: command.stdin,
+		output: command.output,
+		examples: command.examples,
+		hidden: command.hidden,
+	};
+}
+
+function isVersionRequest(args: readonly string[]): boolean {
+	return args.length === 1 && (args[0] === "--version" || args[0] === "-v");
+}
+
+function cliHelpPath(args: readonly string[]): readonly string[] | undefined {
+	if (args[0] === "help") return args.slice(1);
+	if (!args.includes("--help") && !args.includes("-h")) return undefined;
+	return args.filter((arg) => arg !== "--help" && arg !== "-h");
+}
+
+function writeCliHelp(path: readonly string[]): void {
+	const command = findExactCliCommand(path);
+	if (command) {
+		process.stdout.write(renderCommandHelp(command));
 		return;
 	}
-	if (command === "execute-run" && subcommand) {
-		await executeRun(subcommand);
-		return;
-	}
-	if (command === "runs" && subcommand === "start" && rest[0]) {
-		await startRun(rest[0], rest.slice(1));
-		return;
-	}
-	if (command === "runs" && subcommand === "resume" && rest[0]) {
-		await resumeRun(rest[0], rest.slice(1));
-		return;
-	}
-	if (command === "runs" && subcommand === "wait" && rest[0]) {
-		await waitRun(rest[0]);
-		return;
-	}
-	if (command === "runs" && subcommand === "rollback" && rest[0]) {
-		await rollbackRun(rest[0], rest.slice(1));
-		return;
-	}
-	if (command === "runs" && subcommand === "stop" && rest[0]) {
-		await signalRun(rest[0], "SIGTERM");
-		return;
-	}
-	if (command === "runs" && subcommand === "kill" && rest[0]) {
-		await signalRun(rest[0], "SIGKILL");
-		return;
-	}
-	if (command === "runs" && subcommand === "delete" && rest[0]) {
-		writeJson({ deleted: await deleteRun(rest[0]) });
-		return;
-	}
-	if (command === "runs" && subcommand === "list") {
-		writeJson({ runs: await listRuns(process.cwd()) });
-		return;
-	}
-	if (command === "runs" && subcommand === "inspect" && rest[0]) {
-		writeJson({ run: await inspectRun(rest[0]) });
-		return;
-	}
-	if (command === "runs" && subcommand === "checkpoints" && rest[0]) {
-		const runRoot = await resolveRunRoot(process.cwd(), rest[0]);
-		writeJson({ checkpoints: await (await PalantirRunStore.open(runRoot)).listCheckpoints() });
-		return;
-	}
-	if (command === "runs" && subcommand === "metrics" && rest[0]) {
-		const runRoot = await resolveRunRoot(process.cwd(), rest[0]);
-		writeJson({ metrics: await readRunMetrics(runRoot) });
-		return;
-	}
-	if (command === "runs" && subcommand === "logs" && rest[0]) {
-		await writeRunLogs(rest[0], { follow: rest.includes("--follow") });
-		return;
-	}
-	throw new Error(`Unknown palantir command: ${args.join(" ")}`);
+	const groupCommands = visibleCommands().filter((candidate) => path.length === 0 || startsWithPath(candidate.path, path));
+	if (groupCommands.length === 0) throw new Error(`Unknown palantir help topic: ${path.join(" ")}`);
+	process.stdout.write(renderGroupHelp(path, groupCommands));
+}
+
+function renderGroupHelp(path: readonly string[], commands: readonly CliCommand[]): string {
+	const title = path.length === 0 ? "Palantir CLI" : `palantir ${path.join(" ")}`;
+	const usage = path.length === 0 ? "palantir <command> [args]" : `palantir ${path.join(" ")} <command> [args]`;
+	return `${title}\n\nUsage:\n  ${usage}\n  palantir ${path.length === 0 ? "" : `${path.join(" ")} `}--help\n  palantir --version\n\nCommands:\n${renderCommandSummary(commands)}\n\nAgent metadata:\n  palantir commands list --json\n  palantir commands inspect <command-id> --json\n`;
+}
+
+function renderCommandSummary(commands: readonly CliCommand[]): string {
+	const sortedCommands = [...commands].sort((left, right) => left.path.join(" ").localeCompare(right.path.join(" ")));
+	const commandNames = sortedCommands.map((command) => command.path.join(" "));
+	const width = Math.max(...commandNames.map((name) => name.length));
+	return sortedCommands.map((command, index) => `  ${commandNames[index].padEnd(width)}  ${command.description}`).join("\n");
+}
+
+function renderCommandHelp(command: CliCommand): string {
+	return [
+		command.id,
+		"",
+		"Usage:",
+		`  ${command.usage}`,
+		"",
+		"Description:",
+		`  ${command.description}`,
+		...(command.arguments ? sectionLines("Arguments", command.arguments) : []),
+		...(command.options ? sectionLines("Options", command.options) : []),
+		...(command.stdin ? ["", "Stdin:", `  ${command.stdin}`] : []),
+		"",
+		"Output:",
+		`  ${command.output}`,
+		...sectionLines("Examples", command.examples),
+	].join("\n");
+}
+
+function sectionLines(title: string, lines: readonly string[]): readonly string[] {
+	return ["", `${title}:`, ...lines.map((line) => `  ${line}`)];
+}
+
+function findCliCommand(args: readonly string[]): CliCommand | undefined {
+	return sortedCommandsByPathLength(COMMANDS).find((command) => startsWithPath(args, command.path));
+}
+
+function findExactCliCommand(path: readonly string[]): CliCommand | undefined {
+	return COMMANDS.find((command) => command.path.length === path.length && startsWithPath(command.path, path));
+}
+
+function sortedCommandsByPathLength(commands: readonly CliCommand[]): readonly CliCommand[] {
+	return [...commands].sort((left, right) => right.path.length - left.path.length);
+}
+
+function visibleCommands(): readonly CliCommand[] {
+	return COMMANDS.filter((command) => !command.hidden);
+}
+
+function startsWithPath(value: readonly string[], path: readonly string[]): boolean {
+	return path.every((segment, index) => value[index] === segment);
+}
+
+async function readPackageVersion(): Promise<string> {
+	const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown };
+	if (typeof packageJson.version !== "string") throw new Error("Invalid Palantir package version");
+	return packageJson.version;
+}
+
+function requiredArg(command: string, args: readonly string[], index: number, label: string): string {
+	const value = args[index];
+	if (!value) throw new Error(`Missing ${label} for ${command}`);
+	return value;
+}
+
+function assertNoExtraArgs(command: string, args: readonly string[]): void {
+	if (args.length > 0) throw new Error(`${command} does not accept CLI arguments: ${args.join(" ")}`);
+}
+
+function assertKnownFlags(command: string, args: readonly string[], flags: readonly string[]): void {
+	const allowedFlags = new Set(flags);
+	const unsupportedFlags = args.filter((arg) => !allowedFlags.has(arg));
+	if (unsupportedFlags.length > 0) throw new Error(`${command} has unsupported flags or arguments: ${unsupportedFlags.join(" ")}`);
 }
 
 async function listWorkflows(args: readonly string[]): Promise<void> {
+	assertKnownFlags("workflows list", args, ["--entrypoints", "--all"]);
 	const project = await loadPalantirProject(process.cwd());
 	writeJson({ workflows: project.registry.list({ entrypointsOnly: workflowListEntrypointsOnly(args) }) });
 }
@@ -246,8 +603,8 @@ async function executeRun(runId: string): Promise<void> {
 }
 
 async function rollbackRun(run: string, args: readonly string[]): Promise<void> {
-	const checkpointId = args[0];
-	if (!checkpointId) throw new Error("Missing checkpoint id");
+	const checkpointId = requiredArg("runs rollback", args, 0, "checkpoint id");
+	assertNoExtraArgs("runs rollback", args.slice(1));
 	const runRoot = await resolveRunRoot(process.cwd(), run);
 	const engine = new PalantirEngine({ cwd: process.cwd(), gateMode: "pause" });
 	writeJson({ run: await engine.rollbackRun(runRoot, checkpointId) });
