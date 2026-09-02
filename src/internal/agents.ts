@@ -30,7 +30,8 @@ const DEFAULT_AGENT_TOOL_ALLOWLIST = ["read", "bash", "edit", "write", AGENT_RES
 type PalantirAgentRunnerInput = {
 	readonly id: string;
 	readonly runRoot: string;
-	readonly workspace: string;
+	readonly boundaryRoot: string;
+	readonly boundaryName: string;
 	readonly cwd: string;
 	readonly signal?: AbortSignal;
 	readonly model?: CreateAgentSessionOptions["model"];
@@ -97,9 +98,9 @@ export class PalantirAgentRunner {
 
 	private resolveFromCwd(path: string): string {
 		const resolvedPath = isAbsolute(path) ? path : resolve(this.input.cwd, path);
-		const pathFromWorkspace = relative(this.input.workspace, resolvedPath);
-		if (pathFromWorkspace === ".." || pathFromWorkspace.startsWith(`..${sep}`) || isAbsolute(pathFromWorkspace)) {
-			throw new Error(`Agent cwd escapes workflow workspace: ${path}`);
+		const pathFromBoundary = relative(this.input.boundaryRoot, resolvedPath);
+		if (pathFromBoundary === ".." || pathFromBoundary.startsWith(`..${sep}`) || isAbsolute(pathFromBoundary)) {
+			throw new Error(`Agent cwd escapes ${this.input.boundaryName} isolation: ${path}`);
 		}
 		return resolvedPath;
 	}

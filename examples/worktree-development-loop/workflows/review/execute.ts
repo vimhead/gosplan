@@ -4,11 +4,13 @@ import { ensureCommandSucceeded } from "../../shared/commands.ts";
 import { reviewAgentResponseSchema, type ReviewParams } from "./schema.ts";
 
 export async function executeReviewWorkflow(run: PalantirRun, params: ReviewParams): Promise<PalantirRunNext> {
+	const repositoryPath = await run.state.get(worktreeDevelopmentLoopManifest.states.developmentLoop.repositoryPath);
 	const planArtifact = await run.state.get(worktreeDevelopmentLoopManifest.states.planning.planArtifact);
 	const implementationSummary = await run.state.get(worktreeDevelopmentLoopManifest.states.implementation.implementationSummary);
 	const plan = await run.artifacts.read(planArtifact);
 	const diff = await run.commands.run({
 		label: `review-${params.iteration}-diff`,
+		cwd: repositoryPath,
 		command: "git status --short && git diff --stat HEAD -- . && git diff HEAD -- .",
 	});
 	await ensureCommandSucceeded(diff);
@@ -16,6 +18,7 @@ export async function executeReviewWorkflow(run: PalantirRun, params: ReviewPara
 	await run.artifacts.write(`review/iteration-${params.iteration}-diff.txt`, diffOutput);
 	const agent = await run.agents.run({
 		label: `review-${params.iteration}`,
+		cwd: repositoryPath,
 		prompt: buildReviewPrompt(params.task, plan, implementationSummary, diffOutput),
 		response: reviewAgentResponseSchema,
 		tools: ["read", "grep", "find", "ls", "bash"],

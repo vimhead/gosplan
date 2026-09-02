@@ -3,8 +3,10 @@ import { worktreeDevelopmentLoopManifest } from "../../manifest.ts";
 import { planningAgentResponseSchema, type PlanningParams } from "./schema.ts";
 
 export async function executePlanningWorkflow(run: PalantirRun, params: PlanningParams): Promise<PalantirRunNext> {
+	const repositoryPath = await run.state.get(worktreeDevelopmentLoopManifest.states.developmentLoop.repositoryPath);
 	const agent = await run.agents.run({
 		label: "planning",
+		cwd: repositoryPath,
 		prompt: buildPlanningPrompt(params.task),
 		response: planningAgentResponseSchema,
 		tools: ["read", "grep", "find", "ls"],

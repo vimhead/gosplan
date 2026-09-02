@@ -8,9 +8,9 @@ import type { PalantirRunLogs } from "./logs.ts";
 import type { PalantirRunLogger } from "./run-log.ts";
 
 type PalantirCommandRunnerInput = {
-	readonly workspace: string;
+	readonly boundaryRoot: string;
+	readonly boundaryName: string;
 	readonly cwd: string;
-	readonly env: Record<string, string>;
 	readonly signal?: AbortSignal;
 	readonly logs: PalantirRunLogs;
 	readonly logger: PalantirRunLogger;
@@ -30,7 +30,7 @@ export class PalantirCommandRunner {
 			result = await spawnCommand({
 				command: commandInput.command,
 				cwd,
-				env: { ...process.env, ...this.input.env, ...(commandInput.env ?? {}) },
+				env: { ...process.env, ...(commandInput.env ?? {}) },
 				timeoutMs: commandInput.timeoutMs,
 				signal: this.input.signal,
 				stdoutStream: stdoutLog.stream,
@@ -65,9 +65,9 @@ export class PalantirCommandRunner {
 
 	private resolveFromCwd(path: string): string {
 		const resolvedPath = isAbsolute(path) ? path : resolve(this.input.cwd, path);
-		const pathFromWorkspace = relative(this.input.workspace, resolvedPath);
-		if (pathFromWorkspace === ".." || pathFromWorkspace.startsWith(`..${sep}`) || isAbsolute(pathFromWorkspace)) {
-			throw new Error(`Command cwd escapes workflow workspace: ${path}`);
+		const pathFromBoundary = relative(this.input.boundaryRoot, resolvedPath);
+		if (pathFromBoundary === ".." || pathFromBoundary.startsWith(`..${sep}`) || isAbsolute(pathFromBoundary)) {
+			throw new Error(`Command cwd escapes ${this.input.boundaryName} isolation: ${path}`);
 		}
 		return resolvedPath;
 	}

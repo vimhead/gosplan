@@ -7,12 +7,14 @@ export async function executeImplementationWorkflow(
 	run: PalantirRun,
 	params: ImplementationParams,
 ): Promise<PalantirRunNext> {
+	const repositoryPath = await run.state.get(worktreeDevelopmentLoopManifest.states.developmentLoop.repositoryPath);
 	const planArtifact = await run.state.get(worktreeDevelopmentLoopManifest.states.planning.planArtifact);
 	const plan = await run.artifacts.read(planArtifact);
 	const previousReviewArtifact = await run.state.getOptional(worktreeDevelopmentLoopManifest.states.review.reviewArtifact);
 	const previousReview = previousReviewArtifact ? await run.artifacts.read(previousReviewArtifact) : undefined;
 	const agent = await run.agents.run({
 		label: `implementation-${params.iteration}`,
+		cwd: repositoryPath,
 		prompt: buildImplementationPrompt(params.task, plan, params.iteration, previousReview),
 		response: implementationAgentResponseSchema,
 		tools: ["read", "grep", "find", "ls", "edit", "write", "bash"],
@@ -20,6 +22,7 @@ export async function executeImplementationWorkflow(
 	await run.state.set(worktreeDevelopmentLoopManifest.states.implementation.implementationSummary, agent.response.summary);
 	const status = await run.commands.run({
 		label: `implementation-${params.iteration}-status`,
+		cwd: repositoryPath,
 		command: "git status --short",
 	});
 	await ensureCommandSucceeded(status);

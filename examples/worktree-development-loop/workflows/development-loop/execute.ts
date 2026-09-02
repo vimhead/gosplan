@@ -14,5 +14,5 @@ export async function executeDevelopmentLoopWorkflow(
 	await run.state.set(worktreeDevelopmentLoopManifest.states.developmentLoop.maxIterations, params.maxIterations);
 	await run.state.set(worktreeDevelopmentLoopManifest.states.developmentLoop.currentIteration, 1);
 
-	return run.with({ cwd: repositoryPath }).next(worktreeDevelopmentLoopManifest.workflows.planning, { task: params.task });
+	return run.next(worktreeDevelopmentLoopManifest.workflows.planning, { task: params.task });
 }

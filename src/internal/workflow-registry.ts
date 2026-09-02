@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isWorkflowComplete, isWorkflowFail, isWorkflowNext, type PalantirAnyWorkflowDeclaration, type PalantirInspectedWorkflowInfo, type PalantirJsonSchema, type PalantirRegisteredWorkflowInfo, type PalantirRunComplete, type PalantirDispose, type PalantirRunFail, type PalantirWorkflowGateInfo, type PalantirWorkflowImplementation, type PalantirRunNext, type PalantirWorkflowParams, type PalantirRun, type PalantirWorkflowPluginInfo } from "../api.ts";
+import { isWorkflowComplete, isWorkflowFail, isWorkflowNext, type PalantirAnyWorkflowDeclaration, type PalantirInspectedWorkflowInfo, type PalantirJsonSchema, type PalantirRegisteredWorkflowInfo, type PalantirRunComplete, type PalantirDispose, type PalantirRunFail, type PalantirWorkflowGateInfo, type PalantirWorkflowImplementation, type PalantirRunNext, type PalantirRunFor, type PalantirWorkflowParams, type PalantirWorkflowPluginInfo } from "../api.ts";
 import { assertLaunchableWorkflow, isPlainObject, schemaShape, schemaType, unwrapSchema } from "../schema.ts";
 
 export type PalantirRegisteredWorkflow = {
@@ -61,7 +61,7 @@ export class PalantirWorkflowRegistry {
 
 	async describeGate<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
-		run: PalantirRun,
+		run: PalantirRunFor<TWorkflow>,
 		params: unknown,
 		configOverride?: unknown,
 	): Promise<string> {
@@ -76,7 +76,7 @@ export class PalantirWorkflowRegistry {
 
 	async execute<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
-		run: PalantirRun,
+		run: PalantirRunFor<TWorkflow>,
 		params: unknown,
 		configOverride?: unknown,
 	): Promise<PalantirWorkflowStepResult> {
@@ -169,6 +169,7 @@ function workflowInfo(entry: PalantirRegisteredWorkflow): PalantirRegisteredWork
 		title: entry.workflow.title ?? null,
 		description: entry.workflow.description,
 		isEntrypoint: entry.workflow.isEntrypoint,
+		isolation: entry.workflow.isolation,
 		plugin: entry.plugin,
 	};
 }

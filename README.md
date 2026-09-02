@@ -64,7 +64,7 @@ explicit build metadata for `palantir version` and `palantir upgrade`.
 - Explicit workflow controls: `run.next`, `run.complete`, `run.fail`.
 - Resumable runs under `<project-root>/.palantir/runs/<run-id>`.
 - CAS checkpoints for rollback and resume.
-- Workspace-only access through `run.workspace`, `run.cwd`, and `run.path(...)`.
+- Workflow isolation through `runWorkspace` and `project` modes.
 - Typed state, artifacts, command logs, and Pi SDK agent calls.
 - Gates that pause before a target workflow and edit normal params.
 
@@ -215,11 +215,17 @@ export default definePlugin(manifest, {
   workflows: {
     plan: {
       async execute(run, params, config) {
-        const ref = await run.with({ cwd: config.repositoryRoot }).artifacts.write("plan.md", params.task);
+        const status = await run.commands.run({
+          label: "status",
+          cwd: run.path(config.repositoryRoot),
+          command: "git status --short",
+        });
+        const ref = await run.artifacts.write("plan.md", params.task);
         await run.state.set(manifest.states.planning.planArtifact, ref);
         return run.complete({
           summary: "Plan created.",
           artifacts: { plan: ref },
+          logs: { status: status.stdoutLog },
         });
       },
     },
@@ -227,9 +233,46 @@ export default definePlugin(manifest, {
 });
 ```
 
+## Workflow isolation
+
+Workflow declarations default to `runWorkspace` isolation. `run.path(...)`,
+command cwd, and agent cwd must stay inside the run workspace.
+
+```ts
+export const implementWorkflow = {
+  title: "Implement",
+  isEntrypoint: false,
+  params,
+  isolation: { mode: "runWorkspace" },
+} as const satisfies PalantirWorkflowDefinition;
+```
+
+Use `project` isolation for workflows that intentionally inspect or verify files
+inside the Palantir project root. Project-isolated implementations receive
+project-only helpers at the type level.
+
+```ts
+export const verifyWorkflow = {
+  title: "Verify",
+  isEntrypoint: true,
+  params,
+  isolation: { mode: "project" },
+} as const satisfies PalantirWorkflowDefinition;
+
+async function execute(run: PalantirProjectRun) {
+  await run.commands.run({
+    label: "test",
+    cwd: run.projectPath("packages/app"),
+    command: "npm test",
+  });
+}
+```
+
 ## Chain workflows
 
-Workflows never call each other directly. They return scheduler controls.
+Workflows never call each other directly. They return scheduler controls. Routing
+only carries workflow id and params; target workflows choose their own cwd from
+params, state, config, and their isolation mode.
 
 ```ts
 return run.next(manifest.workflows.implement, {

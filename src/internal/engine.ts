@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join } from "node:path";
 import {
 	type PalantirAnyWorkflowDeclaration,
 	type PalantirAnyWorkflowPluginManifest,
@@ -14,7 +14,6 @@ import {
 	type PalantirWorkflowPluginImplementation,
 	type PalantirWorkflowPluginImplementationInput,
 	type PalantirRunNext,
-	type PalantirRun,
 } from "../api.ts";
 import { PalantirAgentResponseCollector } from "./agent-response-tool.ts";
 import { PalantirArtifacts } from "./artifacts.ts";
@@ -43,7 +42,7 @@ export type PalantirEngineInput = {
 
 type RunSession = {
 	readonly runRoot: string;
-	readonly run: PalantirRun;
+	readonly run: PalantirRunContext;
 	readonly state: PalantirRunStateStore;
 	readonly lease: PalantirRunLease;
 	readonly runStore: PalantirRunStore;
@@ -61,8 +60,6 @@ type ActiveRun = {
 type WorkflowStep = {
 	readonly workflow: PalantirAnyWorkflowDeclaration;
 	readonly params: unknown;
-	readonly cwd: string;
-	readonly env: Record<string, string>;
 	readonly interruption?: NonNullable<PalantirRunState["current"]>["interruption"];
 };
 
@@ -116,8 +113,6 @@ export class PalantirEngine {
 		return this.runScheduler(session, {
 			workflow,
 			params,
-			cwd: session.run.cwd,
-			env: options?.env ?? {},
 		});
 	}
 
@@ -177,7 +172,7 @@ export class PalantirEngine {
 		try {
 			for (let step = 1; step <= 1_000; step++) {
 				throwIfRunAborted(session.activeRun);
-				const stepRuntime = session.run.with({ cwd: currentStep.cwd, env: currentStep.env });
+				const stepRuntime = session.run.forWorkflow(currentStep.workflow);
 				if (shouldPauseForGate(currentStep)) {
 					const parsedParams = currentStep.workflow.params.parse(currentStep.params);
 					const description = await this.registry.describeGate(currentStep.workflow, stepRuntime, parsedParams, session.state.currentState().configOverride);
@@ -202,7 +197,7 @@ export class PalantirEngine {
 					await commitRunBoundary(session, `run failed: ${stepResult.workflow.id}`);
 					return { status: "failed", id: stepRuntime.id, name: session.state.currentState().name, workspace: stepRuntime.workspace, cwd: stepRuntime.cwd, workflowId: stepResult.workflow.id, metadata: stepResult.metadata };
 				}
-				const nextStep = this.nextWorkflowStep(stepResult, stepRuntime);
+				const nextStep = this.nextWorkflowStep(stepResult);
 				await session.state.completeWithNext(currentStep.workflow.id, toRunStateStep(nextStep));
 				await recordRunEvent(session, { type: "run.transitioned", fromWorkflowId: currentStep.workflow.id, toWorkflowId: nextStep.workflow.id });
 				await commitRunBoundary(session, `transition: ${currentStep.workflow.id} -> ${nextStep.workflow.id}`);
@@ -220,7 +215,7 @@ export class PalantirEngine {
 		}
 	}
 
-	private async executeWorkflowStep(session: RunSession, step: WorkflowStep, run: PalantirRun): Promise<PalantirWorkflowStepResult> {
+	private async executeWorkflowStep(session: RunSession, step: WorkflowStep, run: PalantirRunContext): Promise<PalantirWorkflowStepResult> {
 		const boundaryRef = await session.runStore.currentSnapshotRef();
 		const logBoundary = session.logger.boundary();
 		const startedAtMs = Date.now();
@@ -242,14 +237,12 @@ export class PalantirEngine {
 		}
 	}
 
-	private nextWorkflowStep(next: PalantirRunNext, run: PalantirRun): WorkflowStep {
+	private nextWorkflowStep(next: PalantirRunNext): WorkflowStep {
 		const workflow = this.registry.workflowById(next.workflowId);
 		if (!workflow) throw new Error(`Unknown next workflow: ${next.workflowId}`);
 		return {
 			workflow,
 			params: next.params,
-			cwd: next.cwd ?? run.cwd,
-			env: next.env ?? {},
 			interruption: this.input.gateMode === "pause" && workflow.gate ? { status: "pending" } : undefined,
 		};
 	}
@@ -264,7 +257,7 @@ export class PalantirEngine {
 		const runRoot = defaultRunRoot(this.input.cwd, id);
 		const currentRoot = runCurrentRoot(runRoot);
 		const workspace = join(currentRoot, "workspace");
-		const cwd = options?.cwd ? resolveFromWorkspace(workspace, options.cwd) : workspace;
+		const cwd = workflowDefaultCwd(this.input.cwd, workspace, workflow);
 		const startedAt = new Date().toISOString();
 		await mkdir(runRoot, { recursive: true });
 		const lease = await PalantirRunLease.acquire(runRoot);
@@ -281,14 +274,14 @@ export class PalantirEngine {
 				initialCwd: cwd,
 				startedAt,
 			});
-			const run = await this.buildRun({ id, currentRoot, workspace, cwd, env: options?.env ?? {}, signal: activeRun.controller.signal, logger });
+			const run = await this.buildRun({ id, currentRoot, workspace, cwd, isolationMode: workflow.isolation.mode, signal: activeRun.controller.signal, logger });
 			const state = await PalantirRunStateStore.create(runRoot, {
 				id,
 				name,
 				entrypointWorkflowId: workflow.id,
 				workspace,
 				configOverride: options?.configOverride,
-				current: { workflowId: workflow.id, params, cwd, env: options?.env ?? {} },
+				current: { workflowId: workflow.id, params, cwd, env: {} },
 				startedAt,
 			});
 			const session = { runRoot, run, state, lease, runStore, logger, activeRun };
@@ -311,9 +304,10 @@ export class PalantirEngine {
 			const runStore = await PalantirRunStore.open(runRoot);
 			const currentRoot = runCurrentRoot(runRoot);
 			const logger = await PalantirRunLogger.load(join(currentRoot, MANIFEST_FILE_NAME));
-			const cwd = currentState.current?.cwd ?? currentState.workspace;
-			const env = currentState.current?.env ?? {};
-			const run = await this.buildRun({ id: currentState.id, currentRoot, workspace: currentState.workspace, cwd, env, signal: activeRun.controller.signal, logger });
+			const workflow = currentState.current ? this.registry.workflowById(currentState.current.workflowId) : undefined;
+			const isolationMode = workflow?.isolation.mode ?? "runWorkspace";
+			const cwd = workflowDefaultCwd(this.input.cwd, currentState.workspace, workflow);
+			const run = await this.buildRun({ id: currentState.id, currentRoot, workspace: currentState.workspace, cwd, isolationMode, signal: activeRun.controller.signal, logger });
 			return { runRoot, run, state, lease, runStore, logger, activeRun };
 		} catch (error) {
 			this.failActiveRun(runRoot, activeRun);
@@ -326,10 +320,10 @@ export class PalantirEngine {
 		readonly currentRoot: string;
 		readonly workspace: string;
 		readonly cwd: string;
-		readonly env: Record<string, string>;
+		readonly isolationMode: "runWorkspace" | "project";
 		readonly signal: AbortSignal;
 		readonly logger: PalantirRunLogger;
-	}): Promise<PalantirRun> {
+	}): Promise<PalantirRunContext> {
 		const artifactsRoot = join(input.currentRoot, "artifacts");
 		const logsRoot = join(input.currentRoot, "logs");
 		await mkdir(input.workspace, { recursive: true });
@@ -339,8 +333,9 @@ export class PalantirEngine {
 			id: input.id,
 			runRoot: input.currentRoot,
 			workspace: input.workspace,
+			projectRoot: this.input.cwd,
 			cwd: input.cwd,
-			env: input.env,
+			isolationMode: input.isolationMode,
 			signal: input.signal,
 			agentDir: this.input.agentDir,
 			responseCollector: this.responseCollector,
@@ -395,21 +390,14 @@ function defaultRunRoot(cwd: string, id: string): string {
 	return join(cwd, RUNS_DIR_NAME, "runs", id);
 }
 
-function resolveFromWorkspace(workspace: string, path: string): string {
-	const resolvedPath = isAbsolute(path) ? path : resolve(workspace, path);
-	const pathFromWorkspace = relative(workspace, resolvedPath);
-	if (pathFromWorkspace === ".." || pathFromWorkspace.startsWith(`..${sep}`) || isAbsolute(pathFromWorkspace)) {
-		throw new Error(`Workflow cwd escapes workspace: ${path}`);
-	}
-	return resolvedPath;
+function workflowDefaultCwd(projectRoot: string, workspace: string, workflow: PalantirAnyWorkflowDeclaration | undefined): string {
+	return workflow?.isolation.mode === "project" ? projectRoot : workspace;
 }
 
 function toWorkflowStep(workflow: PalantirAnyWorkflowDeclaration, step: NonNullable<PalantirRunState["current"]>): WorkflowStep {
 	return {
 		workflow,
 		params: step.params,
-		cwd: step.cwd,
-		env: step.env,
 		interruption: step.interruption,
 	};
 }
@@ -418,8 +406,8 @@ function toRunStateStep(step: WorkflowStep): NonNullable<PalantirRunState["curre
 	return {
 		workflowId: step.workflow.id,
 		params: step.params,
-		cwd: step.cwd,
-		env: step.env,
+		cwd: "",
+		env: {},
 		interruption: step.interruption,
 	};
 }

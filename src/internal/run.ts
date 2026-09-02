@@ -1,6 +1,6 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
-import type { PalantirAnyWorkflowDeclaration, PalantirRunOutcomeMetadata, PalantirWorkflowParamsInput, PalantirRun } from "../api.ts";
+import type { PalantirAnyWorkflowDeclaration, PalantirProjectRun, PalantirRunOutcomeMetadata, PalantirWorkflowIsolationMode, PalantirWorkflowParamsInput, PalantirRun } from "../api.ts";
 import type { PalantirAgentResponseCollector } from "./agent-response-tool.ts";
 import type { PalantirArtifacts } from "./artifacts.ts";
 import { PalantirAgentRunner } from "./agents.ts";
@@ -12,9 +12,10 @@ import type { PalantirJsonWorkflowState } from "./state-store.ts";
 type DefaultPalantirRunInput = {
 	readonly id: string;
 	readonly runRoot: string;
+	readonly projectRoot: string;
 	readonly workspace: string;
 	readonly cwd: string;
-	readonly env: Record<string, string>;
+	readonly isolationMode: PalantirWorkflowIsolationMode;
 	readonly signal?: AbortSignal;
 	readonly model?: CreateAgentSessionOptions["model"];
 	readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
@@ -26,7 +27,7 @@ type DefaultPalantirRunInput = {
 	readonly logs: PalantirRunLogs;
 };
 
-export class PalantirRunContext implements PalantirRun {
+export class PalantirRunContext implements PalantirProjectRun {
 	readonly state: PalantirRun["state"];
 	readonly artifacts: PalantirRun["artifacts"];
 	readonly logs: PalantirRun["logs"];
@@ -34,11 +35,13 @@ export class PalantirRunContext implements PalantirRun {
 	readonly agents: PalantirRun["agents"];
 	readonly id: string;
 	readonly workspace: string;
+	readonly projectRoot: string;
 	readonly cwd: string;
 
 	constructor(private readonly input: DefaultPalantirRunInput) {
 		this.id = input.id;
 		this.workspace = input.workspace;
+		this.projectRoot = input.projectRoot;
 		this.cwd = input.cwd;
 		this.state = input.state;
 		this.artifacts = input.artifacts;
@@ -48,9 +51,9 @@ export class PalantirRunContext implements PalantirRun {
 		this.commands = {
 			run: (commandInput) =>
 				new PalantirCommandRunner({
-					workspace: this.workspace,
+					boundaryRoot: this.boundaryRoot,
+					boundaryName: this.input.isolationMode,
 					cwd: this.cwd,
-					env: this.input.env,
 					signal: this.input.signal,
 					logs: this.input.logs,
 					logger: this.input.logger,
@@ -62,11 +65,25 @@ export class PalantirRunContext implements PalantirRun {
 		};
 	}
 
+	forWorkflow(workflow: PalantirAnyWorkflowDeclaration): PalantirRunContext {
+		const isolationMode = workflow.isolation.mode;
+		return new PalantirRunContext({
+			...this.input,
+			isolationMode,
+			cwd: isolationMode === "project" ? this.projectRoot : this.workspace,
+		});
+	}
+
+	private get boundaryRoot(): string {
+		return this.input.isolationMode === "project" ? this.projectRoot : this.workspace;
+	}
+
 	private createAgentRunner(): PalantirAgentRunner {
 		return new PalantirAgentRunner({
 			id: this.id,
 			runRoot: this.input.runRoot,
-			workspace: this.workspace,
+			boundaryRoot: this.boundaryRoot,
+			boundaryName: this.input.isolationMode,
 			cwd: this.cwd,
 			signal: this.input.signal,
 			model: this.input.model,
@@ -78,16 +95,12 @@ export class PalantirRunContext implements PalantirRun {
 		});
 	}
 
-	with(options: { cwd?: string; env?: Record<string, string> }): PalantirRun {
-		return new PalantirRunContext({
-			...this.input,
-			cwd: options.cwd ? this.resolveFromCwd(options.cwd) : this.cwd,
-			env: { ...this.input.env, ...(options.env ?? {}) },
-		});
+	path(relativePath: string): string {
+		return this.resolveFromRoot(this.cwd, this.boundaryRoot, relativePath);
 	}
 
-	path(relativePath: string): string {
-		return this.resolveFromCwd(relativePath);
+	projectPath(relativePath: string): string {
+		return this.resolveFromRoot(this.projectRoot, this.projectRoot, relativePath);
 	}
 
 	next<TWorkflow extends PalantirAnyWorkflowDeclaration>(
@@ -100,8 +113,6 @@ export class PalantirRunContext implements PalantirRun {
 			type: "next",
 			workflowId: typeof workflow === "string" ? workflow : workflow.id,
 			params,
-			cwd: this.cwd,
-			env: this.input.env,
 		};
 	}
 
@@ -113,11 +124,11 @@ export class PalantirRunContext implements PalantirRun {
 		return { type: "fail", metadata };
 	}
 
-	private resolveFromCwd(path: string): string {
-		const resolvedPath = isAbsolute(path) ? path : resolve(this.cwd, path);
-		const pathFromWorkspace = relative(this.workspace, resolvedPath);
-		if (pathFromWorkspace === ".." || pathFromWorkspace.startsWith(`..${sep}`) || isAbsolute(pathFromWorkspace)) {
-			throw new Error(`Workflow path escapes workspace: ${path}`);
+	private resolveFromRoot(root: string, boundaryRoot: string, path: string): string {
+		const resolvedPath = isAbsolute(path) ? path : resolve(root, path);
+		const pathFromBoundary = relative(boundaryRoot, resolvedPath);
+		if (pathFromBoundary === ".." || pathFromBoundary.startsWith(`..${sep}`) || isAbsolute(pathFromBoundary)) {
+			throw new Error(`Workflow path escapes ${this.input.isolationMode} isolation: ${path}`);
 		}
 		return resolvedPath;
 	}

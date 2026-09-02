@@ -6,10 +6,11 @@ It registers an entrypoint workflow named **Workspace development loop**. The
 workflow:
 
 1. clones the configured repository into `run.workspace/repo`;
-2. scopes child workflows with `run.with({ cwd: "repo" })`;
-3. plans once, then loops through implementation and automated review;
-4. routes automated review through a gated review router;
-5. completes on `accept`, fails cleanly on `blocked`, and fails cleanly when the
+2. stores the repository path in workflow state;
+3. passes explicit cwd values to agents and commands;
+4. plans once, then loops through implementation and automated review;
+5. routes automated review through a gated review router;
+6. completes on `accept`, fails cleanly on `blocked`, and fails cleanly when the
    max iteration count is reached.
 
 The example is structured like a real workflow package:
@@ -53,8 +54,8 @@ Best practices shown:
 - final details are persisted as small outcome metadata pointing to artifacts;
 - the workspace may contain a nested `.git/` because Palantir snapshots with CAS.
 
-Set `config.worktreeDevelopmentLoop.repositoryRoot` in `palantir.json` to the
-repository you want the workflow to clone.
+Set `config.worktreeDevelopmentLoop.repositoryRoot` in `palantir.project.json`
+to the repository you want the workflow to clone.
 
 ```bash
 palantir project inspect

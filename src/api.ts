@@ -12,9 +12,16 @@ export type PalantirWorkflowAnyGate = {
 	readonly fields?: readonly string[];
 };
 
+export type PalantirWorkflowIsolationMode = "runWorkspace" | "project";
+
+export type PalantirWorkflowIsolation<Mode extends PalantirWorkflowIsolationMode = PalantirWorkflowIsolationMode> = {
+	readonly mode: Mode;
+};
+
 export type PalantirWorkflowDeclaration<
 	Id extends string = string,
 	ParamsSchema extends z.ZodType = z.ZodType,
+	IsolationMode extends PalantirWorkflowIsolationMode = PalantirWorkflowIsolationMode,
 > = {
 	readonly kind: typeof WORKFLOW_DECLARATION_KIND;
 	readonly id: Id;
@@ -23,6 +30,7 @@ export type PalantirWorkflowDeclaration<
 	readonly description?: string;
 	readonly params: ParamsSchema;
 	readonly gate?: PalantirWorkflowAnyGate;
+	readonly isolation: PalantirWorkflowIsolation<IsolationMode>;
 };
 
 export type PalantirAnyWorkflowDeclaration = PalantirWorkflowDeclaration<string, z.ZodType>;
@@ -45,6 +53,7 @@ export type PalantirWorkflowGate<ParamsSchema extends z.ZodType> = unknown exten
 export type PalantirWorkflowDefinition<
 	Id extends string | undefined = string | undefined,
 	ParamsSchema extends z.ZodType = z.ZodType,
+	IsolationMode extends PalantirWorkflowIsolationMode = PalantirWorkflowIsolationMode,
 > = {
 	readonly id?: Id;
 	readonly title?: string;
@@ -52,6 +61,7 @@ export type PalantirWorkflowDefinition<
 	readonly description?: string;
 	readonly params: ParamsSchema;
 	readonly gate?: PalantirWorkflowGate<ParamsSchema>;
+	readonly isolation?: PalantirWorkflowIsolation<IsolationMode>;
 };
 
 export type PalantirAnyWorkflowDefinition = {
@@ -61,6 +71,7 @@ export type PalantirAnyWorkflowDefinition = {
 	readonly description?: string;
 	readonly params: z.ZodType;
 	readonly gate?: PalantirWorkflowAnyGate;
+	readonly isolation?: PalantirWorkflowIsolation;
 };
 
 export type PalantirWorkflowStateDefinition<T = unknown, Id extends string = string> = {
@@ -104,7 +115,8 @@ export type PalantirQualifiedPluginWorkflow<
 > = TWorkflow extends { readonly params: infer ParamsSchema extends z.ZodType }
 	? PalantirWorkflowDeclaration<
 		TWorkflow extends { readonly id: infer ExplicitId extends string } ? ExplicitId : `${PluginId}.${WorkflowKey}`,
-		ParamsSchema
+		ParamsSchema,
+		TWorkflow extends { readonly isolation: { readonly mode: infer IsolationMode extends PalantirWorkflowIsolationMode } } ? IsolationMode : "runWorkspace"
 	>
 	: never;
 
@@ -189,8 +201,6 @@ export type PalantirRunNext = {
 	readonly type: "next";
 	readonly workflowId: string;
 	readonly params: unknown;
-	readonly cwd?: string;
-	readonly env?: Record<string, string>;
 };
 
 export type PalantirRunOutcomeMetadata = {
@@ -212,9 +222,13 @@ export type PalantirRunFail = {
 
 export type PalantirWorkflowExecutionResult = PalantirRunNext | PalantirRunComplete | PalantirRunFail;
 
+export type PalantirRunFor<TWorkflow extends PalantirAnyWorkflowDeclaration> = TWorkflow extends { readonly isolation: { readonly mode: "project" } }
+	? PalantirProjectRun
+	: PalantirRun;
+
 export type PalantirWorkflowGateImplementation<TWorkflow extends PalantirAnyWorkflowDeclaration, TConfig> = {
 	describe(
-		run: PalantirRun,
+		run: PalantirRunFor<TWorkflow>,
 		params: PalantirWorkflowParams<TWorkflow>,
 		config: TConfig,
 	): MaybePromise<string>;
@@ -223,7 +237,7 @@ export type PalantirWorkflowGateImplementation<TWorkflow extends PalantirAnyWork
 export type PalantirWorkflowImplementation<TWorkflow extends PalantirAnyWorkflowDeclaration, TConfig = unknown> = {
 	readonly gate?: PalantirWorkflowGateImplementation<TWorkflow, TConfig>;
 	execute(
-		run: PalantirRun,
+		run: PalantirRunFor<TWorkflow>,
 		params: PalantirWorkflowParams<TWorkflow>,
 		config: TConfig,
 	): MaybePromise<PalantirWorkflowExecutionResult>;
@@ -232,8 +246,6 @@ export type PalantirWorkflowImplementation<TWorkflow extends PalantirAnyWorkflow
 export type PalantirRunStartOptions = {
 	readonly id?: string;
 	readonly name?: string;
-	readonly cwd?: string;
-	readonly env?: Record<string, string>;
 	readonly configOverride?: unknown;
 };
 
@@ -535,11 +547,17 @@ export type PalantirAgentSession = {
 	dispose(): Promise<void>;
 };
 
-export type PalantirRun = {
+export type PalantirRun = PalantirRunBase;
+
+export type PalantirProjectRun = PalantirRunBase & {
+	projectRoot: string;
+	projectPath(relativePath: string): string;
+};
+
+type PalantirRunBase = {
 	id: string;
 	workspace: string;
 	cwd: string;
-	with(options: { cwd?: string; env?: Record<string, string> }): PalantirRun;
 	path(relativePath: string): string;
 	next<TWorkflow extends PalantirAnyWorkflowDeclaration>(
 		workflow: TWorkflow,
@@ -583,6 +601,7 @@ export type PalantirRegisteredWorkflowInfo = {
 	readonly title: string | null;
 	readonly description?: string;
 	readonly isEntrypoint: boolean;
+	readonly isolation: PalantirWorkflowIsolation;
 	readonly plugin?: PalantirWorkflowPluginInfo;
 };
 
@@ -633,7 +652,7 @@ function qualifyWorkflow<PluginId extends string, TWorkflow extends PalantirAnyW
 	declaredIds: Set<string>,
 ): PalantirQualifiedPluginWorkflow<PluginId, string, TWorkflow> {
 	const id = resolveDeclarationId(pluginId, [key], workflow.id, "workflow", declaredIds);
-	return { kind: WORKFLOW_DECLARATION_KIND, ...workflow, id } as unknown as PalantirQualifiedPluginWorkflow<PluginId, string, TWorkflow>;
+	return { kind: WORKFLOW_DECLARATION_KIND, ...workflow, id, isolation: workflow.isolation ?? { mode: "runWorkspace" } } as unknown as PalantirQualifiedPluginWorkflow<PluginId, string, TWorkflow>;
 }
 
 function qualifyStateTree(pluginId: string, node: PalantirWorkflowPluginStateTreeNode | undefined, path: readonly string[], declaredIds: Set<string>): unknown {
@@ -647,14 +666,15 @@ function qualifyStateTree(pluginId: string, node: PalantirWorkflowPluginStateTre
 
 export function isWorkflowDeclaration(value: unknown): value is PalantirAnyWorkflowDeclaration {
 	if (!value || typeof value !== "object") return false;
-	const candidate = value as { kind?: unknown; id?: unknown; title?: unknown; isEntrypoint?: unknown; params?: unknown };
+	const candidate = value as { kind?: unknown; id?: unknown; title?: unknown; isEntrypoint?: unknown; params?: unknown; isolation?: { mode?: unknown } };
 	return (
 		candidate.kind === WORKFLOW_DECLARATION_KIND &&
 		typeof candidate.id === "string" &&
 		candidate.id.length > 0 &&
 		(candidate.title === undefined || typeof candidate.title === "string") &&
 		typeof candidate.isEntrypoint === "boolean" &&
-		Boolean(candidate.params)
+		Boolean(candidate.params) &&
+		(candidate.isolation?.mode === "runWorkspace" || candidate.isolation?.mode === "project")
 	);
 }
 
