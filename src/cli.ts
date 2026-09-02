@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { findPalantirProject, loadPalantirProject } from "./plugin-loader.ts";
+import { findPalantirProject, loadPalantirProject, PALANTIR_CONFIG_FILE_NAME, PALANTIR_PROJECT_FILE_NAME } from "./plugin-loader.ts";
 import { type PalantirAnyWorkflowDeclaration, type DeletedPalantirRunInfo, type PalantirProjectInfo, type PalantirRunInfo } from "./api.ts";
 import { PalantirEngine } from "./internal/engine.ts";
 import { errorMessage, isNodeError } from "./internal/errors.ts";
@@ -51,9 +51,21 @@ const COMMANDS: readonly CliCommand[] = [
 		execute: (args) => writeCliHelp(args),
 	},
 	{
+		id: "project.init",
+		path: ["project", "init"],
+		description: "Use when creating a Palantir project marker and local run state directory in the current directory.",
+		usage: "palantir project init",
+		output: "JSON object with initialized project metadata under project.",
+		examples: ["palantir project init"],
+		execute: async (args) => {
+			assertNoExtraArgs("project init", args);
+			await initProject();
+		},
+	},
+	{
 		id: "project.inspect",
 		path: ["project", "inspect"],
-		description: "Use when discovering the active Palantir project config, plugins, workflow sources, and Seer mode.",
+		description: "Use when discovering the active Palantir project, plugins, workflow sources, and Seer mode.",
 		usage: "palantir project inspect",
 		output: "JSON object with project metadata under project.",
 		examples: ["palantir project inspect"],
@@ -149,7 +161,7 @@ const COMMANDS: readonly CliCommand[] = [
 		examples: ["palantir runs list"],
 		execute: async (args) => {
 			assertNoExtraArgs("runs list", args);
-			writeJson({ runs: await listRuns(process.cwd()) });
+			writeJson({ runs: await listCurrentProjectRuns() });
 		},
 	},
 	{
@@ -177,7 +189,8 @@ const COMMANDS: readonly CliCommand[] = [
 		execute: async (args) => {
 			const run = requiredArg("runs checkpoints", args, 0, "run");
 			assertNoExtraArgs("runs checkpoints", args.slice(1));
-			const runRoot = await resolveRunRoot(process.cwd(), run);
+			const project = await findPalantirProject(process.cwd());
+			const runRoot = await resolveRunRoot(project.projectRoot, run);
 			writeJson({ checkpoints: await (await PalantirRunStore.open(runRoot)).listCheckpoints() });
 		},
 	},
@@ -192,7 +205,8 @@ const COMMANDS: readonly CliCommand[] = [
 		execute: async (args) => {
 			const run = requiredArg("runs metrics", args, 0, "run");
 			assertNoExtraArgs("runs metrics", args.slice(1));
-			const runRoot = await resolveRunRoot(process.cwd(), run);
+			const project = await findPalantirProject(process.cwd());
+			const runRoot = await resolveRunRoot(project.projectRoot, run);
 			writeJson({ metrics: await readRunMetrics(runRoot) });
 		},
 	},
@@ -323,6 +337,7 @@ const HELP_COMMAND_ORDER = [
 	"runs.stop",
 	"runs.kill",
 	"runs.delete",
+	"project.init",
 	"project.inspect",
 	"seer.inspect",
 	"upgrade",
@@ -347,6 +362,7 @@ const HUMAN_COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
 	"runs.stop": "Stop a running run.",
 	"runs.kill": "Force-stop a running run.",
 	"runs.delete": "Delete an inactive run.",
+	"project.init": "Create a Palantir project in the current directory.",
 	"project.inspect": "Inspect the Palantir project.",
 	"seer.inspect": "Inspect resolved Seer mode.",
 	upgrade: "Upgrade the installed Palantir CLI.",
@@ -720,6 +736,26 @@ function workflowListEntrypointsOnly(args: readonly string[]): boolean {
 	return !all;
 }
 
+async function initProject(): Promise<void> {
+	const projectRoot = process.cwd();
+	const projectPath = resolve(projectRoot, PALANTIR_PROJECT_FILE_NAME);
+	if (await isFile(projectPath)) throw new Error(`Palantir project already exists: ${projectPath}`);
+	await mkdir(resolve(projectRoot, RUNS_ROOT), { recursive: true });
+	const includes = await defaultProjectIncludes(projectRoot);
+	await writeFile(projectPath, `${JSON.stringify({ version: 1, includes, config: {} }, null, 2)}\n`, "utf8");
+	await ensureGitignoreExcludesRunState(projectRoot);
+	writeJson({ project: { path: projectPath, root: projectRoot, runsRoot: resolve(projectRoot, RUNS_ROOT) } });
+}
+
+async function defaultProjectIncludes(projectRoot: string): Promise<readonly string[]> {
+	return await isFile(resolve(projectRoot, PALANTIR_CONFIG_FILE_NAME)) ? [`./${PALANTIR_CONFIG_FILE_NAME}`] : [];
+}
+
+async function listCurrentProjectRuns(): Promise<PalantirRunInfo[]> {
+	const project = await findPalantirProject(process.cwd());
+	return listRuns(project.projectRoot);
+}
+
 async function inspectProject(): Promise<void> {
 	const project = await loadPalantirProject(process.cwd());
 	writeJson({ project: projectInfo(project) });
@@ -728,6 +764,8 @@ async function inspectProject(): Promise<void> {
 function projectInfo(project: Awaited<ReturnType<typeof loadPalantirProject>>): PalantirProjectInfo {
 	return {
 		cwd: project.cwd,
+		projectPath: project.projectPath,
+		projectRoot: project.projectRoot,
 		configPath: project.configPath,
 		configRoot: project.configRoot,
 		configFiles: project.configFiles.map((configFile) => configFile.path),
@@ -750,23 +788,24 @@ async function startRun(workflowId: string, args: readonly string[]): Promise<vo
 	const params = workflow.params.parse(input.params ?? {});
 	const configOverride = input.config;
 	const id = randomUUID();
-	const name = generateRunName(new Set((await listRuns(process.cwd())).map((run) => run.name)));
-	const runRoot = resolve(process.cwd(), RUNS_ROOT, id);
+	const name = generateRunName(new Set((await listRuns(project.projectRoot)).map((run) => run.name)));
+	const runRoot = resolve(project.projectRoot, RUNS_ROOT, id);
 	await mkdir(runRoot, { recursive: true });
 	const createdAt = new Date().toISOString();
 	await writeRunLaunchRequest(runRoot, { version: 1, type: "run", id, name, workflowId, params, configOverride, createdAt });
-	startDetachedExecuteRun(id);
+	startDetachedExecuteRun(id, project.projectRoot);
 	writeJson({ run: startedRunInfo({ id, name, workflow, runRoot, createdAt }) });
 }
 
 async function resumeRun(run: string, args: readonly string[]): Promise<void> {
 	assertNoStructuredInputArgs("runs resume", args);
-	const runRoot = await resolveRunRoot(process.cwd(), run);
+	const project = await loadPalantirProject(process.cwd());
+	const runRoot = await resolveRunRoot(project.projectRoot, run);
 	const runInfo = await getRunInfo(runRoot);
 	const input = parseResumeRunInput(await readStdinJson());
 	const params = await parseResumeParams(runInfo, input.params);
 	await writeRunResumeRequest(runRoot, { version: 1, type: "resume", id: runInfo.id, params, createdAt: new Date().toISOString() });
-	startDetachedExecuteRun(runInfo.id);
+	startDetachedExecuteRun(runInfo.id, project.projectRoot);
 	writeJson({ run: { ...runInfo, status: "running", health: "healthy", interruption: undefined, updatedAt: new Date().toISOString() } });
 }
 
@@ -781,13 +820,14 @@ async function parseResumeParams(runInfo: PalantirRunInfo, params: unknown): Pro
 }
 
 async function waitRun(run: string): Promise<void> {
-	writeJson({ run: await waitForInactiveRun(run) });
+	const project = await findPalantirProject(process.cwd());
+	writeJson({ run: await waitForInactiveRun(project.projectRoot, run) });
 }
 
-async function waitForInactiveRun(run: string): Promise<PalantirRunInfo> {
+async function waitForInactiveRun(projectRoot: string, run: string): Promise<PalantirRunInfo> {
 	let runRoot: string | undefined;
 	while (true) {
-		runRoot ??= await resolveWaitableRunRoot(process.cwd(), run);
+		runRoot ??= await resolveWaitableRunRoot(projectRoot, run);
 		try {
 			const runInfo = await readRunInspection(runRoot);
 			if (runInfo.status !== "running" || runInfo.health === "unhealthy") return runInfo;
@@ -818,13 +858,36 @@ async function isDirectory(path: string): Promise<boolean> {
 	}
 }
 
+async function isFile(path: string): Promise<boolean> {
+	try {
+		return (await stat(path)).isFile();
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return false;
+		throw error;
+	}
+}
+
+async function ensureGitignoreExcludesRunState(projectRoot: string): Promise<void> {
+	const gitignorePath = resolve(projectRoot, ".gitignore");
+	const runStatePattern = ".palantir/runs/";
+	let currentText = "";
+	try {
+		currentText = await readFile(gitignorePath, "utf8");
+	} catch (error) {
+		if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+	}
+	if (currentText.split(/\r?\n/).includes(runStatePattern)) return;
+	const separator = currentText.length === 0 || currentText.endsWith("\n") ? "" : "\n";
+	await writeFile(gitignorePath, `${currentText}${separator}${runStatePattern}\n`, "utf8");
+}
+
 async function executeRun(runId: string): Promise<void> {
 	const abortController = new AbortController();
 	process.once("SIGTERM", () => abortController.abort(new Error("Stopped by user")));
 	process.once("SIGINT", () => abortController.abort(new Error("Interrupted")));
-	const runRoot = resolve(process.cwd(), RUNS_ROOT, runId);
 	const project = await loadPalantirProject(process.cwd());
-	const engine = new PalantirEngine({ cwd: process.cwd(), signal: abortController.signal, gateMode: "pause", config: project.projectConfig });
+	const runRoot = resolve(project.projectRoot, RUNS_ROOT, runId);
+	const engine = new PalantirEngine({ cwd: project.projectRoot, signal: abortController.signal, gateMode: "pause", config: project.projectConfig });
 	for (const plugin of project.plugins) engine.registerPlugin(plugin);
 	const launchRequest = await readOptionalRunLaunchRequest(runRoot);
 	if (launchRequest) {
@@ -848,13 +911,15 @@ async function executeRun(runId: string): Promise<void> {
 async function rollbackRun(run: string, args: readonly string[]): Promise<void> {
 	const checkpointId = requiredArg("runs rollback", args, 0, "checkpoint id");
 	assertNoExtraArgs("runs rollback", args.slice(1));
-	const runRoot = await resolveRunRoot(process.cwd(), run);
-	const engine = new PalantirEngine({ cwd: process.cwd(), gateMode: "pause" });
+	const project = await findPalantirProject(process.cwd());
+	const runRoot = await resolveRunRoot(project.projectRoot, run);
+	const engine = new PalantirEngine({ cwd: project.projectRoot, gateMode: "pause" });
 	writeJson({ run: await engine.rollbackRun(runRoot, checkpointId) });
 }
 
 async function inspectRun(run: string): Promise<PalantirRunInfo> {
-	return readRunInspection(await resolveRunRoot(process.cwd(), run));
+	const project = await findPalantirProject(process.cwd());
+	return readRunInspection(await resolveRunRoot(project.projectRoot, run));
 }
 
 async function readRunInspection(runRoot: string): Promise<PalantirRunInfo> {
@@ -862,13 +927,15 @@ async function readRunInspection(runRoot: string): Promise<PalantirRunInfo> {
 }
 
 async function signalRun(run: string, signal: NodeJS.Signals): Promise<void> {
-	const runRoot = await resolveRunRoot(process.cwd(), run);
+	const project = await findPalantirProject(process.cwd());
+	const runRoot = await resolveRunRoot(project.projectRoot, run);
 	await terminateRun(runRoot, signal);
 	writeJson({ run: await getRunInfo(runRoot) });
 }
 
 async function deleteRun(run: string): Promise<DeletedPalantirRunInfo> {
-	const runRoot = await resolveRunRoot(process.cwd(), run);
+	const project = await findPalantirProject(process.cwd());
+	const runRoot = await resolveRunRoot(project.projectRoot, run);
 	const runInfo = await getRunInfo(runRoot);
 	if (runInfo.status === "running") throw new Error(`Stop run before deleting it: ${runInfo.name}`);
 	await rm(runRoot, { recursive: true, force: true });
@@ -883,7 +950,8 @@ async function terminateRun(runRoot: string, signal: NodeJS.Signals): Promise<vo
 }
 
 async function writeRunLogs(run: string, options: { readonly follow: boolean }): Promise<void> {
-	const runRoot = await resolveRunRoot(process.cwd(), run);
+	const project = await findPalantirProject(process.cwd());
+	const runRoot = await resolveRunRoot(project.projectRoot, run);
 	let written = 0;
 	while (true) {
 		const events = await readRunEvents(runRoot);
@@ -896,9 +964,9 @@ async function writeRunLogs(run: string, options: { readonly follow: boolean }):
 	}
 }
 
-function startDetachedExecuteRun(runId: string): void {
+function startDetachedExecuteRun(runId: string, projectRoot: string): void {
 	const child = spawn(process.execPath, [process.argv[1] ?? "", "execute-run", runId], {
-		cwd: process.cwd(),
+		cwd: projectRoot,
 		detached: true,
 		stdio: "ignore",
 	});

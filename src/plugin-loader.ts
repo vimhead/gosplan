@@ -16,7 +16,9 @@ import { PalantirWorkflowRegistry, type PalantirRegisteredWorkflow } from "./int
 import { schemaType, unwrapSchema } from "./schema.ts";
 import { resolveSeerModeConfig, type PalantirResolvedSeerModeConfig } from "./seer/index.ts";
 
-const PALANTIR_CONFIG_FILE_NAME = "palantir.json";
+export const PALANTIR_PROJECT_FILE_NAME = "palantir.project.json";
+export const PALANTIR_CONFIG_FILE_NAME = "palantir.json";
+
 const seerModeConfigSchema = z.object({
 	writableRoots: z.array(z.string().min(1)).min(1),
 });
@@ -24,10 +26,16 @@ const palantirConfigSchema = z.object({
 	plugins: z.array(z.string().min(1)).default([]),
 	includes: z.array(z.string().min(1)).default([]),
 	config: z.record(z.string(), z.unknown()).default({}),
+});
+const palantirProjectConfigSchema = z.object({
+	version: z.literal(1).default(1),
+	includes: z.array(z.string().min(1)).default([]),
+	config: z.record(z.string(), z.unknown()).default({}),
 	seerMode: seerModeConfigSchema.optional(),
 });
 
-type PalantirConfig = z.output<typeof palantirConfigSchema>;
+type PalantirConfig = z.output<typeof palantirConfigSchema> & { readonly seerMode?: never };
+type PalantirProjectConfig = z.output<typeof palantirProjectConfigSchema>;
 
 type PalantirConfigFile = {
 	readonly path: string;
@@ -37,9 +45,11 @@ type PalantirConfigFile = {
 
 export type PalantirProject = {
 	readonly cwd: string;
+	readonly projectPath: string;
+	readonly projectRoot: string;
 	readonly configPath: string;
 	readonly configRoot: string;
-	readonly config: PalantirConfig;
+	readonly config: PalantirProjectConfig;
 	readonly configFiles: readonly PalantirConfigFile[];
 	readonly projectConfig: Record<string, unknown>;
 	readonly seerMode?: PalantirResolvedSeerModeConfig;
@@ -77,50 +87,84 @@ export async function loadPalantirProject(cwd: string): Promise<PalantirLoadedPr
 }
 
 export async function findPalantirProject(cwd: string): Promise<PalantirProject> {
-	const configPath = await findNearestPalantirConfig(cwd);
-	const rootConfig = await readPalantirConfigFile(configPath);
-	const configFiles = await loadIncludedPalantirConfigFiles(rootConfig, new Set());
+	const projectPath = await findNearestPalantirProject(cwd);
+	const projectRootConfig = await readPalantirProjectConfigFile(projectPath);
+	const configFiles = await loadIncludedPalantirConfigFiles(projectRootConfig, new Set());
 	return {
 		cwd: resolve(cwd),
-		configPath: rootConfig.path,
-		configRoot: rootConfig.root,
-		config: rootConfig.config,
+		projectPath: projectRootConfig.path,
+		projectRoot: projectRootConfig.root,
+		configPath: projectRootConfig.path,
+		configRoot: projectRootConfig.root,
+		config: projectRootConfig.config,
 		configFiles,
 		projectConfig: mergeProjectConfig(configFiles),
-		seerMode: resolveSeerModeConfig({ configPath: rootConfig.path, configRoot: rootConfig.root, seerMode: rootConfig.config.seerMode }),
+		seerMode: resolveSeerModeConfig({ configPath: projectRootConfig.path, configRoot: projectRootConfig.root, seerMode: projectRootConfig.config.seerMode }),
 	};
 }
 
-async function findNearestPalantirConfig(cwd: string): Promise<string> {
+async function findNearestPalantirProject(cwd: string): Promise<string> {
 	let current = resolve(cwd);
 	while (true) {
-		const configPath = join(current, PALANTIR_CONFIG_FILE_NAME);
+		const projectPath = join(current, PALANTIR_PROJECT_FILE_NAME);
 		try {
-			await access(configPath);
-			return configPath;
+			await access(projectPath);
+			return projectPath;
 		} catch (error) {
 			if (!isNodeError(error) || error.code !== "ENOENT") throw error;
 		}
 		const parent = dirname(current);
-		if (parent === current) throw new Error(`Could not find ${PALANTIR_CONFIG_FILE_NAME} from ${cwd}`);
+		if (parent === current) throw new Error(`Could not find ${PALANTIR_PROJECT_FILE_NAME} from ${cwd}`);
 		current = parent;
 	}
 }
 
-async function loadIncludedPalantirConfigFiles(configFile: PalantirConfigFile, visitedPaths: Set<string>): Promise<PalantirConfigFile[]> {
+type PalantirProjectConfigFile = {
+	readonly path: string;
+	readonly root: string;
+	readonly config: PalantirProjectConfig;
+};
+
+async function loadIncludedPalantirConfigFiles(projectFile: PalantirProjectConfigFile, visitedPaths: Set<string>): Promise<PalantirConfigFile[]> {
+	const includedConfigFiles = await Promise.all(projectFile.config.includes.map(async (includePath) => {
+		const configPaths = await expandIncludePath(projectFile.root, includePath);
+		return Promise.all(configPaths.map(readPalantirConfigFile));
+	}));
+	const descendants = await Promise.all(includedConfigFiles.flat().map((includedConfigFile) => loadPalantirConfigTree(includedConfigFile, visitedPaths)));
+	return [projectConfigFile(projectFile), ...descendants.flat()];
+}
+
+async function loadPalantirConfigTree(configFile: PalantirConfigFile, visitedPaths: Set<string>): Promise<PalantirConfigFile[]> {
 	if (visitedPaths.has(configFile.path)) return [];
 	visitedPaths.add(configFile.path);
 	const includedConfigFiles = await Promise.all(configFile.config.includes.map(async (includePath) => {
 		const configPaths = await expandIncludePath(configFile.root, includePath);
 		return Promise.all(configPaths.map(readPalantirConfigFile));
 	}));
-	const descendants = await Promise.all(includedConfigFiles.flat().map((includedConfigFile) => loadIncludedPalantirConfigFiles(includedConfigFile, visitedPaths)));
+	const descendants = await Promise.all(includedConfigFiles.flat().map((includedConfigFile) => loadPalantirConfigTree(includedConfigFile, visitedPaths)));
 	return [configFile, ...descendants.flat()];
+}
+
+async function readPalantirProjectConfigFile(path: string): Promise<PalantirProjectConfigFile> {
+	const config = palantirProjectConfigSchema.parse(JSON.parse(await readFile(path, "utf8")));
+	return { path, root: dirname(path), config };
 }
 
 async function readPalantirConfigFile(path: string): Promise<PalantirConfigFile> {
 	const config = palantirConfigSchema.parse(JSON.parse(await readFile(path, "utf8")));
 	return { path, root: dirname(path), config };
+}
+
+function projectConfigFile(projectFile: PalantirProjectConfigFile): PalantirConfigFile {
+	return {
+		path: projectFile.path,
+		root: projectFile.root,
+		config: {
+			plugins: [],
+			includes: projectFile.config.includes,
+			config: projectFile.config.config,
+		},
+	};
 }
 
 async function loadWorkflowPlugins(project: PalantirProject): Promise<LoadedPalantirWorkflowPlugin[]> {
@@ -168,35 +212,42 @@ function palantirWorkflowVirtualModules(): Record<string, unknown> {
 }
 
 function mergeProjectConfig(configFiles: readonly PalantirConfigFile[]): Record<string, unknown> {
-	let result: Record<string, unknown> = {};
-	for (const configFile of configFiles) {
-		result = mergeConfigObjects(result, configFile.config.config, ["config"]);
+	const [projectFile, ...reusableConfigFiles] = configFiles;
+	let reusableConfig: Record<string, unknown> = {};
+	for (const configFile of reusableConfigFiles) {
+		reusableConfig = mergeReusableConfigObjects(reusableConfig, configFile.config.config, ["config"]);
 	}
-	return result;
+	return mergeProjectConfigObjects(reusableConfig, projectFile?.config.config ?? {});
 }
 
-function mergeConfigObjects(base: Record<string, unknown>, override: Record<string, unknown>, path: readonly string[]): Record<string, unknown> {
+function mergeReusableConfigObjects(base: Record<string, unknown>, override: Record<string, unknown>, path: readonly string[]): Record<string, unknown> {
 	const result: Record<string, unknown> = { ...base };
 	for (const [key, overrideValue] of Object.entries(override)) {
 		result[key] = Object.prototype.hasOwnProperty.call(result, key)
-			? mergeConfigValue(result[key], overrideValue, [...path, key])
+			? mergeReusableConfigValue(result[key], overrideValue, [...path, key])
 			: overrideValue;
 	}
 	return result;
 }
 
-function mergeConfigValue(base: unknown, override: unknown, path: readonly string[]): unknown {
-	if (isPlainObject(base) && isPlainObject(override)) return mergeConfigObjects(base, override, path);
-	if (jsonValuesEqual(base, override)) return base;
-	throw new Error(`Conflicting Palantir project config at ${path.join(".")}`);
+function mergeReusableConfigValue(base: unknown, override: unknown, path: readonly string[]): unknown {
+	if (isPlainObject(base) && isPlainObject(override)) return mergeReusableConfigObjects(base, override, path);
+	if (JSON.stringify(base) === JSON.stringify(override)) return base;
+	throw new Error(`Conflicting Palantir reusable config at ${path.join(".")}`);
+}
+
+function mergeProjectConfigObjects(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
+	const result: Record<string, unknown> = { ...base };
+	for (const [key, overrideValue] of Object.entries(override)) {
+		result[key] = isPlainObject(result[key]) && isPlainObject(overrideValue)
+			? mergeProjectConfigObjects(result[key], overrideValue)
+			: overrideValue;
+	}
+	return result;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function jsonValuesEqual(left: unknown, right: unknown): boolean {
-	return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function defaultConfigInput(configSchema: z.ZodType, config: unknown): unknown {

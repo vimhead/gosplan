@@ -56,12 +56,13 @@ explicit build metadata for `palantir version` and `palantir upgrade`.
 ## Features
 
 - Typed plugin manifests and executable plugins.
-- Project plugin discovery through `palantir.json`.
+- Project discovery through `palantir.project.json`.
+- Reusable workflow/plugin discovery through included `palantir.json` files.
 - Detached workflow execution with `palantir execute-run <run-id>`.
 - JSON command output and NDJSON log/event streams.
 - Human-readable run names such as `quiet-river-lantern`.
 - Explicit workflow controls: `run.next`, `run.complete`, `run.fail`.
-- Resumable runs under `.palantir/runs/<run-id>`.
+- Resumable runs under `<project-root>/.palantir/runs/<run-id>`.
 - CAS checkpoints for rollback and resume.
 - Workspace-only access through `run.workspace`, `run.cwd`, and `run.path(...)`.
 - Typed state, artifacts, command logs, and Pi SDK agent calls.
@@ -69,26 +70,48 @@ explicit build metadata for `palantir version` and `palantir upgrade`.
 
 ## Register plugins
 
-Create `palantir.json` in the project:
+Initialize a project root:
+
+```bash
+palantir project init
+```
+
+`palantir project init` creates `palantir.project.json` and `.palantir/runs/` in
+the current directory. Palantir discovers projects by walking upward to the
+nearest `palantir.project.json`; reusable `palantir.json` files are loaded only
+when the project includes them.
+
+Create a reusable workflow config:
 
 ```json
 {
-  "plugins": ["./palantir/plugin.ts"],
+  "plugins": ["./palantir/plugin.ts"]
+}
+```
+
+Include it from `palantir.project.json` and keep project-specific plugin config
+there:
+
+```json
+{
+  "version": 1,
+  "includes": ["./palantir.json"],
   "config": {
     "example": {}
   }
 }
 ```
 
-Plugin paths are resolved relative to `palantir.json`. Project config is keyed by
-plugin id and validated against each plugin manifest config schema. Each plugin
-module must default-export the plugin.
+Plugin paths are resolved relative to the included `palantir.json`. Project
+config is keyed by plugin id and validated against each plugin manifest config
+schema. Each plugin module must default-export the plugin.
 
-For multiple plugin packages, keep package-local configs and aggregate them with
-explicit includes:
+For multiple plugin packages, aggregate package-local configs with explicit
+includes:
 
 ```json
 {
+  "version": 1,
   "includes": ["./packages/*/palantir.json"]
 }
 ```
@@ -109,12 +132,13 @@ palantir workflows inspect worktreeDevelopmentLoop.developmentLoop
 
 ## Seer mode config
 
-Projects can declare a Seer mode write boundary in their nearest `palantir.json`.
-Palantir resolves each writable root relative to that config file and rejects roots
-that escape the project root.
+Projects can declare a Seer mode write boundary in `palantir.project.json`.
+Palantir resolves each writable root relative to the project root and rejects
+roots that escape the project root.
 
 ```json
 {
+  "version": 1,
   "includes": ["./packages/workflows/palantir.json"],
   "seerMode": {
     "writableRoots": ["./workflow-sources"]

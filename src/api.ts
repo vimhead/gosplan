@@ -598,6 +598,8 @@ export type PalantirProjectPluginInfo = PalantirWorkflowPluginInfo & {
 
 export type PalantirProjectInfo = {
 	readonly cwd: string;
+	readonly projectPath: string;
+	readonly projectRoot: string;
 	readonly configPath: string;
 	readonly configRoot: string;
 	readonly configFiles: readonly string[];

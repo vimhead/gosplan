@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "includes": ["./palantir.json"],
+  "config": {
+    "worktreeDevelopmentLoop": {
+      "repositoryRoot": "."
+    }
+  }
+}
