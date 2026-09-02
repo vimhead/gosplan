@@ -17,6 +17,7 @@ import { PALANTIR_BUILD_INFO, type PalantirBuildInfo, type PalantirGithubRelease
 
 const RUNS_ROOT = join(".palantir", "runs");
 const RUN_WAIT_INTERVAL_MS = 1000;
+const CLI_DESCRIPTION = "Palantir is a JSON-native CLI for discovering, running, inspecting, upgrading, and repairing typed resumable workflow plugins for coding agents.";
 
 const COMMANDS: readonly CliCommand[] = [
 	{
@@ -391,7 +392,7 @@ function cliHelpPath(args: readonly string[]): readonly string[] | undefined {
 function writeCliHelp(path: readonly string[]): void {
 	const command = findExactCliCommand(path);
 	if (command) {
-		writeJson({ help: { type: "command", command: cliCommandInfo(command) } });
+		writeJson({ help: { type: "command", description: CLI_DESCRIPTION, command: cliCommandInfo(command) } });
 		return;
 	}
 	const groupCommands = sortedCommandsByPath(visibleCommands().filter((candidate) => path.length === 0 || startsWithPath(candidate.path, path)));
@@ -399,6 +400,7 @@ function writeCliHelp(path: readonly string[]): void {
 	writeJson({
 		help: {
 			type: "group",
+			description: CLI_DESCRIPTION,
 			path,
 			usage: groupHelpUsage(path),
 			commands: groupCommands.map(cliCommandInfo),
