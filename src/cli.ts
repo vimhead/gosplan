@@ -17,7 +17,7 @@ import { PALANTIR_BUILD_INFO, type PalantirBuildInfo, type PalantirGithubRelease
 
 const RUNS_ROOT = join(".palantir", "runs");
 const RUN_WAIT_INTERVAL_MS = 1000;
-const CLI_DESCRIPTION = "Palantir is a JSON-native CLI for discovering, running, inspecting, upgrading, and repairing typed resumable workflow plugins for coding agents.";
+const CLI_DESCRIPTION = "Palantir runs typed, resumable workflows for coding agents. Use this JSON-native CLI to discover workflows, start or resume runs, inspect evidence, and manage the installed binary.";
 
 const COMMANDS: readonly CliCommand[] = [
 	{
