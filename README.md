@@ -305,8 +305,7 @@ Resume an interrupted run by passing the updated params through stdin:
 printf '{"params":{"decision":"accept","notes":"Looks good"}}' | norn runs resume quiet-river-lantern
 ```
 
-Failed and stopped runs preserve their dirty workspace and diagnostics. To retry,
-restore an earlier checkpoint; the run becomes `pendingResume` and can then resume:
+To retry a failed or stopped run, restore an earlier checkpoint and resume:
 
 ```bash
 norn runs checkpoints quiet-river-lantern
