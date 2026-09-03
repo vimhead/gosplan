@@ -1,6 +1,7 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
-import type { NornAnyWorkflowDeclaration, NornProjectRun, NornRunOutcomeMetadata, NornWorkflowIsolationMode, NornWorkflowParamsInput, NornRun } from "../api.ts";
+import type { z } from "zod";
+import type { NornAnyWorkflowDeclaration, NornProjectRun, NornRunOutcomeMetadata, NornWorkflowIsolationMode, NornWorkflowTarget, NornRun } from "../api.ts";
 import type { NornAgentResponseCollector } from "./agent-response-tool.ts";
 import type { NornArtifacts } from "./artifacts.ts";
 import { NornAgentRunner } from "./agents.ts";
@@ -103,12 +104,7 @@ export class NornRunContext implements NornProjectRun {
 		return this.resolveFromRoot(this.projectRoot, this.projectRoot, relativePath);
 	}
 
-	next<TWorkflow extends NornAnyWorkflowDeclaration>(
-		workflow: TWorkflow,
-		params: NornWorkflowParamsInput<TWorkflow>,
-	): ReturnType<NornRun["next"]>;
-	next(workflowId: string, params: unknown): ReturnType<NornRun["next"]>;
-	next(workflow: NornAnyWorkflowDeclaration | string, params: unknown): ReturnType<NornRun["next"]> {
+	next<ParamsSchema extends z.ZodType>(workflow: NornWorkflowTarget<ParamsSchema>, params: z.input<ParamsSchema>): ReturnType<NornRun["next"]> {
 		return {
 			type: "next",
 			workflowId: typeof workflow === "string" ? workflow : workflow.id,

@@ -123,7 +123,7 @@ A manifest gives the plugin an id, binds workflow declarations, and can define
 state shared between workflow steps:
 
 ```ts
-import { definePluginManifest, workflowArtifactRefSchema } from "norn";
+import { definePluginManifest, artifactRefSchema } from "norn";
 import { z } from "zod";
 import { planWorkflow } from "./workflows/plan.ts";
 
@@ -135,7 +135,7 @@ export const manifest = definePluginManifest({
   },
   states: {
     planning: {
-      planArtifact: workflowArtifactRefSchema,
+      planArtifact: artifactRefSchema,
     },
   },
 });
@@ -175,14 +175,53 @@ Workflow implementations return run controls instead of calling other workflows
 directly:
 
 ```ts
+return run.complete({ summary: "Accepted after review." });
+
+return run.fail({ summary: "Blocked by missing credentials." });
+```
+
+### Chaining workflows
+
+Use `run.next(...)` to continue with another workflow. Pass a workflow declaration
+when the target is known in code:
+
+```ts
 return run.next(manifest.workflows.implement, {
   task: params.task,
   iteration: 1,
 });
+```
 
-return run.complete({ summary: "Accepted after review." });
+Reusable workflows can accept a serializable typed workflow id for their next
+step:
 
-return run.fail({ summary: "Blocked by missing credentials." });
+```ts
+import { artifactRefSchema, workflowIdSchema } from "norn";
+import { z } from "zod";
+
+const planningOutputSchema = z.object({
+  planArtifact: artifactRefSchema,
+  summary: z.string(),
+});
+
+const planningParamsSchema = z.object({
+  task: z.string(),
+  nextWorkflowId: workflowIdSchema(planningOutputSchema).nullable(),
+});
+
+return params.nextWorkflowId
+  ? run.next(params.nextWorkflowId, { planArtifact, summary })
+  : run.complete({ summary, artifacts: { plan: planArtifact } });
+```
+
+Callers can pass either a JSON workflow id or a workflow declaration; the schema
+stores the id:
+
+```ts
+return run.next(reusableManifest.workflows.plan, {
+  task: params.task,
+  nextWorkflowId: projectManifest.workflows.receivePlan,
+});
 ```
 
 Use the default `runWorkspace` isolation for workflows that should operate inside

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { workflowArtifactRefSchema } from "norn";
+import { artifactRefSchema } from "norn";
 
 export const reviewDecisionSchema = z.enum(["accept", "revise", "blocked"]);
 
@@ -16,7 +16,7 @@ export const reviewAgentResponseSchema = z.object({
 export const storedReviewSchema = z.object({
 	decision: reviewDecisionSchema,
 	summary: z.string(),
-	reviewArtifact: workflowArtifactRefSchema,
+	reviewArtifact: artifactRefSchema,
 });
 
 export type ReviewParams = z.output<typeof reviewParamsSchema>;

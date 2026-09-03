@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { workflowArtifactRefSchema, type NornWorkflowPluginStateTree } from "norn";
+import { artifactRefSchema, type NornWorkflowPluginStateTree } from "norn";
 import { reviewDecisionSchema } from "./workflows/review/schema.ts";
 
 export const developmentLoopState = {
@@ -10,7 +10,7 @@ export const developmentLoopState = {
 } as const satisfies NornWorkflowPluginStateTree;
 
 export const planningState = {
-	planArtifact: workflowArtifactRefSchema,
+	planArtifact: artifactRefSchema,
 } as const satisfies NornWorkflowPluginStateTree;
 
 export const implementationState = {
@@ -19,5 +19,5 @@ export const implementationState = {
 
 export const reviewState = {
 	reviewDecision: reviewDecisionSchema,
-	reviewArtifact: workflowArtifactRefSchema,
+	reviewArtifact: artifactRefSchema,
 } as const satisfies NornWorkflowPluginStateTree;
