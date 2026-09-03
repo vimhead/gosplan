@@ -211,6 +211,15 @@ return params.nextWorkflow
   : run.complete({ summary, artifacts: { plan: planArtifact } });
 ```
 
+Caller side:
+
+```ts
+return run.next(reusableManifest.workflows.plan, {
+  task: params.task,
+  nextWorkflow: projectManifest.workflows.receivePlan,
+});
+```
+
 Use the default `runWorkspace` isolation for workflows that should operate inside
 a per-run workspace. Use `project` isolation only for workflows that must inspect
 or verify files in the project root:
