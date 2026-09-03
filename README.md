@@ -192,7 +192,7 @@ return run.next(manifest.workflows.implement, {
 });
 ```
 
-A reusable workflow can receive a next step. Its caller supplies
+A reusable workflow can receive a next step. Its caller supplies opaque
 `forwardParams`; the `params` schema describes the values the reusable workflow
 contributes:
 
@@ -203,7 +203,6 @@ import { z } from "zod";
 const planningParamsSchema = z.object({
   task: z.string(),
   next: workflowRefSchema({
-    forwardParams: z.object({ task: z.string() }),
     params: z.object({
       planArtifact: artifactRefSchema,
       summary: z.string(),
