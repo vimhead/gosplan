@@ -60,8 +60,8 @@ export class NornRunContext implements NornProjectRun {
 				}).run(commandInput),
 		};
 		this.agents = {
-			spawn: (agentInput) => this.createAgentRunner().spawn(agentInput),
-			run: (agentInput) => this.createAgentRunner().run(agentInput),
+			createSession: (agentInput) => this.createAgentRunner().createSession(agentInput),
+			prompt: (agentInput) => this.createAgentRunner().prompt(agentInput),
 		};
 	}
 

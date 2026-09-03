@@ -12,14 +12,14 @@ export async function executeImplementationWorkflow(
 	const plan = await run.artifacts.read(planArtifact);
 	const previousReviewArtifact = await run.state.getOptional(worktreeDevelopmentLoopManifest.states.review.reviewArtifact);
 	const previousReview = previousReviewArtifact ? await run.artifacts.read(previousReviewArtifact) : undefined;
-	const agent = await run.agents.run({
+	const implementation = await run.agents.prompt({
 		label: `implementation-${params.iteration}`,
 		cwd: repositoryPath,
+		tools: ["read", "grep", "find", "ls", "edit", "write", "bash"],
 		prompt: buildImplementationPrompt(params.task, plan, params.iteration, previousReview),
 		response: implementationAgentResponseSchema,
-		tools: ["read", "grep", "find", "ls", "edit", "write", "bash"],
 	});
-	await run.state.set(worktreeDevelopmentLoopManifest.states.implementation.implementationSummary, agent.response.summary);
+	await run.state.set(worktreeDevelopmentLoopManifest.states.implementation.implementationSummary, implementation.summary);
 	const status = await run.commands.run({
 		label: `implementation-${params.iteration}-status`,
 		cwd: repositoryPath,

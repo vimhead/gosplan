@@ -4,14 +4,14 @@ import { planningAgentResponseSchema, type PlanningParams } from "./schema.ts";
 
 export async function executePlanningWorkflow(run: NornRun, params: PlanningParams): Promise<NornRunNext> {
 	const repositoryPath = await run.state.get(worktreeDevelopmentLoopManifest.states.developmentLoop.repositoryPath);
-	const agent = await run.agents.run({
+	const planning = await run.agents.prompt({
 		label: "planning",
 		cwd: repositoryPath,
+		tools: ["read", "grep", "find", "ls"],
 		prompt: buildPlanningPrompt(params.task),
 		response: planningAgentResponseSchema,
-		tools: ["read", "grep", "find", "ls"],
 	});
-	const planArtifact = await run.artifacts.write("planning/plan.md", agent.response.plan);
+	const planArtifact = await run.artifacts.write("planning/plan.md", planning.plan);
 	await run.state.set(worktreeDevelopmentLoopManifest.states.planning.planArtifact, planArtifact);
 	return run.next(worktreeDevelopmentLoopManifest.workflows.implementation, { task: params.task, iteration: 1 });
 }

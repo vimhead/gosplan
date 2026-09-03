@@ -1,4 +1,4 @@
-import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
+import type { CreateAgentSessionOptions, EventBus, PromptOptions } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 import type { NornResolvedSeerModeConfig } from "./seer/config.ts";
 
@@ -492,16 +492,15 @@ export type NornCommandRunResult = {
 	readonly stderrLog: NornLogRef;
 };
 
-export type NornAgentInitialEvent = {
-	readonly name: string;
-	readonly data?: unknown;
+export type NornAgentBeforeSessionStartContext = {
+	readonly events: EventBus;
 };
 
-export type NornAgentSpawnInput = {
+export type NornAgentCreateSessionInput = {
 	readonly label: string;
 	readonly cwd?: string;
 	readonly tools?: string[];
-	readonly initialEvents?: readonly NornAgentInitialEvent[];
+	readonly beforeSessionStart?: (context: NornAgentBeforeSessionStartContext) => MaybePromise<void>;
 	readonly model?: CreateAgentSessionOptions["model"];
 	readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
 };
@@ -510,14 +509,12 @@ export type NornAgentPromptInput<ResponseSchema extends z.ZodType> = {
 	readonly prompt: string;
 	readonly response: ResponseSchema;
 	readonly maxAttempts?: number;
+	readonly options?: PromptOptions;
 };
 
-export type NornAgentRunInput<ResponseSchema extends z.ZodType> = NornAgentSpawnInput & NornAgentPromptInput<ResponseSchema>;
+export type NornAgentSinglePromptInput<ResponseSchema extends z.ZodType> = NornAgentCreateSessionInput & NornAgentPromptInput<ResponseSchema>;
 
-export type NornAgentSessionEvents = {
-	emit(name: string, data?: unknown): void;
-	on(name: string, handler: (data: unknown) => void): NornDispose;
-};
+export type NornAgentSessionEvents = EventBus;
 
 export type NornAgentUsageCost = {
 	readonly input: number;
@@ -620,7 +617,7 @@ export type NornAgentSession = {
 	readonly label: string;
 	readonly cwd: string;
 	readonly events: NornAgentSessionEvents;
-	run<ResponseSchema extends z.ZodType>(input: NornAgentPromptInput<ResponseSchema>): Promise<NornAgentRunResult<ResponseSchema>>;
+	prompt<ResponseSchema extends z.ZodType>(input: NornAgentPromptInput<ResponseSchema>): Promise<z.output<ResponseSchema>>;
 	dispose(): Promise<void>;
 };
 
@@ -651,8 +648,8 @@ type NornRunBase = {
 		run(input: NornCommandRunInput): Promise<NornCommandRunResult>;
 	};
 	agents: {
-		spawn(input: NornAgentSpawnInput): Promise<NornAgentSession>;
-		run<ResponseSchema extends z.ZodType>(input: NornAgentRunInput<ResponseSchema>): Promise<NornAgentRunResult<ResponseSchema>>;
+		createSession(input: NornAgentCreateSessionInput): Promise<NornAgentSession>;
+		prompt<ResponseSchema extends z.ZodType>(input: NornAgentSinglePromptInput<ResponseSchema>): Promise<z.output<ResponseSchema>>;
 	};
 };
 

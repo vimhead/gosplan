@@ -16,18 +16,18 @@ export async function executeReviewWorkflow(run: NornRun, params: ReviewParams):
 	await ensureCommandSucceeded(diff);
 	const diffOutput = await run.logs.read(diff.stdoutLog);
 	await run.artifacts.write(`review/iteration-${params.iteration}-diff.txt`, diffOutput);
-	const agent = await run.agents.run({
+	const review = await run.agents.prompt({
 		label: `review-${params.iteration}`,
 		cwd: repositoryPath,
+		tools: ["read", "grep", "find", "ls", "bash"],
 		prompt: buildReviewPrompt(params.task, plan, implementationSummary, diffOutput),
 		response: reviewAgentResponseSchema,
-		tools: ["read", "grep", "find", "ls", "bash"],
 	});
-	const automatedReviewArtifact = await run.artifacts.write(`review/iteration-${params.iteration}-automated.json`, JSON.stringify(agent.response, null, 2));
+	const automatedReviewArtifact = await run.artifacts.write(`review/iteration-${params.iteration}-automated.json`, JSON.stringify(review, null, 2));
 	return run.next(worktreeDevelopmentLoopManifest.workflows.reviewRouter, {
 		iteration: params.iteration,
-		decision: agent.response.decision,
-		summary: agent.response.summary,
+		decision: review.decision,
+		summary: review.summary,
 		automatedReviewArtifact,
 	});
 }

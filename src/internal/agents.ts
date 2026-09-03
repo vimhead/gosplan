@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import type { NornAgentInitialEvent, NornAgentPromptInput, NornAgentRunInput, NornAgentRunRawAttempt, NornAgentRunResult, NornAgentSessionEvents, NornAgentSpawnInput, NornAgentSession, NornAgentUsage } from "../api.ts";
+import type { NornAgentCreateSessionInput, NornAgentPromptInput, NornAgentRunRawAttempt, NornAgentRunResult, NornAgentSessionEvents, NornAgentSession, NornAgentSinglePromptInput, NornAgentUsage } from "../api.ts";
 import {
 	AGENT_RESPONSE_TOOL_NAME,
 	NornAgentResponseCollector,
@@ -42,7 +42,7 @@ type NornAgentRunnerInput = {
 	readonly responseCollector: NornAgentResponseCollector;
 };
 
-type SpawnedNornAgentSessionInput = NornAgentRunnerInput & {
+type CreatedNornAgentSessionInput = NornAgentRunnerInput & {
 	readonly label: string;
 	readonly cwd: string;
 	readonly session: AgentSession;
@@ -56,7 +56,7 @@ export class NornAgentRunner {
 		this.responseToolFactory = new NornAgentResponseToolFactory(input.responseCollector);
 	}
 
-	async spawn(agentInput: NornAgentSpawnInput): Promise<NornAgentSession> {
+	async createSession(agentInput: NornAgentCreateSessionInput): Promise<NornAgentSession> {
 		const cwd = agentInput.cwd ? this.resolveFromCwd(agentInput.cwd) : this.input.cwd;
 		const sessionDir = resolve(this.input.runRoot, "sessions");
 		await mkdir(sessionDir, { recursive: true });
@@ -65,7 +65,6 @@ export class NornAgentRunner {
 		const agentDir = this.input.agentDir ?? getAgentDir();
 		const loader = new DefaultResourceLoader({ cwd, agentDir, eventBus });
 		await loader.reload();
-		emitInitialEvents(eventBus, agentInput.initialEvents);
 		const { session } = await createAgentSession({
 			cwd,
 			resourceLoader: loader,
@@ -75,10 +74,17 @@ export class NornAgentRunner {
 			model: agentInput.model ?? this.input.model,
 			thinkingLevel: agentInput.thinkingLevel ?? this.input.thinkingLevel,
 		});
-		await bindExtensionsForInitialEvents(session, agentInput.initialEvents);
+
+		try {
+			await agentInput.beforeSessionStart?.({ events: eventBus });
+			await session.bindExtensions({});
+		} catch (error) {
+			session.dispose();
+			throw error;
+		}
 
 		await this.input.logger.record({ type: "agent.spawned", label: agentInput.label, cwd });
-		return new SpawnedNornAgentSession({
+		return new CreatedNornAgentSession({
 			...this.input,
 			label: agentInput.label,
 			cwd,
@@ -87,10 +93,10 @@ export class NornAgentRunner {
 		});
 	}
 
-	async run<ResponseSchema extends z.ZodType>(agentInput: NornAgentRunInput<ResponseSchema>): Promise<NornAgentRunResult<ResponseSchema>> {
-		const agent = await this.spawn(agentInput);
+	async prompt<ResponseSchema extends z.ZodType>(agentInput: NornAgentSinglePromptInput<ResponseSchema>): Promise<z.output<ResponseSchema>> {
+		const agent = await this.createSession(agentInput);
 		try {
-			return await agent.run(agentInput);
+			return await agent.prompt(agentInput);
 		} finally {
 			await agent.dispose();
 		}
@@ -106,19 +112,23 @@ export class NornAgentRunner {
 	}
 }
 
-class SpawnedNornAgentSession implements NornAgentSession {
+class CreatedNornAgentSession implements NornAgentSession {
 	readonly label: string;
 	readonly cwd: string;
 	readonly events: NornAgentSessionEvents;
 	private isDisposed = false;
 
-	constructor(private readonly input: SpawnedNornAgentSessionInput) {
+	constructor(private readonly input: CreatedNornAgentSessionInput) {
 		this.label = input.label;
 		this.cwd = input.cwd;
 		this.events = input.events;
 	}
 
-	async run<ResponseSchema extends z.ZodType>(agentInput: NornAgentPromptInput<ResponseSchema>): Promise<NornAgentRunResult<ResponseSchema>> {
+	async prompt<ResponseSchema extends z.ZodType>(agentInput: NornAgentPromptInput<ResponseSchema>): Promise<z.output<ResponseSchema>> {
+		return (await this.promptWithResult(agentInput)).response;
+	}
+
+	private async promptWithResult<ResponseSchema extends z.ZodType>(agentInput: NornAgentPromptInput<ResponseSchema>): Promise<NornAgentRunResult<ResponseSchema>> {
 		if (this.isDisposed) throw new Error(`Workflow agent session is disposed: ${this.label}`);
 		const maxAttempts = Math.max(1, Math.floor(agentInput.maxAttempts ?? DEFAULT_AGENT_ATTEMPTS));
 		const attempts: NornAgentRunRawAttempt[] = [];
@@ -214,7 +224,8 @@ class SpawnedNornAgentSession implements NornAgentSession {
 		try {
 			this.input.signal?.throwIfAborted();
 			await this.input.session.prompt(withResponseToolInstruction(agentInput.prompt, agentInput.response, this.label, responseRunId, attempt, previousError), {
-				source: "extension",
+				...agentInput.options,
+				source: agentInput.options?.source ?? "extension",
 			});
 			this.input.signal?.throwIfAborted();
 			capturedResponse = this.input.responseCollector.get(responseRunId);
@@ -233,17 +244,6 @@ class SpawnedNornAgentSession implements NornAgentSession {
 			sessionFile: this.input.session.sessionFile,
 		};
 	}
-}
-
-function emitInitialEvents(eventBus: NornAgentSessionEvents, events: readonly NornAgentInitialEvent[] | undefined): void {
-	for (const event of events ?? []) {
-		eventBus.emit(event.name, event.data);
-	}
-}
-
-async function bindExtensionsForInitialEvents(session: AgentSession, events: readonly NornAgentInitialEvent[] | undefined): Promise<void> {
-	if ((events?.length ?? 0) === 0) return;
-	await session.bindExtensions({});
 }
 
 function usageFromMessages(messages: readonly unknown[]): NornAgentUsage {
