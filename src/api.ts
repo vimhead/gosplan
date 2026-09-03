@@ -18,10 +18,10 @@ export type NornWorkflowIsolation<Mode extends NornWorkflowIsolationMode = NornW
 	readonly mode: Mode;
 };
 
-declare const nornWorkflowIdParamsBrand: unique symbol;
+declare const nornWorkflowRefParamsBrand: unique symbol;
 
-export type NornWorkflowId<ParamsSchema extends z.ZodType = z.ZodType, Id extends string = string> = Id & {
-	readonly [nornWorkflowIdParamsBrand]: z.input<ParamsSchema>;
+export type NornWorkflowRef<ParamsSchema extends z.ZodType = z.ZodType, Id extends string = string> = Id & {
+	readonly [nornWorkflowRefParamsBrand]: z.input<ParamsSchema>;
 };
 
 export type NornWorkflowDeclaration<
@@ -30,7 +30,7 @@ export type NornWorkflowDeclaration<
 	IsolationMode extends NornWorkflowIsolationMode = NornWorkflowIsolationMode,
 > = {
 	readonly kind: typeof WORKFLOW_DECLARATION_KIND;
-	readonly id: NornWorkflowId<ParamsSchema, Id>;
+	readonly id: NornWorkflowRef<ParamsSchema, Id>;
 	readonly title?: string;
 	readonly isEntrypoint: boolean;
 	readonly description?: string;
@@ -40,8 +40,8 @@ export type NornWorkflowDeclaration<
 };
 
 export type NornAnyWorkflowDeclaration = NornWorkflowDeclaration<string, z.ZodType>;
-export type NornWorkflowTarget<ParamsSchema extends z.ZodType = z.ZodType> = NornWorkflowDeclaration<string, ParamsSchema> | NornWorkflowId<ParamsSchema>;
-export type NornWorkflowIdSchemaInput<ParamsSchema extends z.ZodType = z.ZodType> = string | NornWorkflowDeclaration<string, ParamsSchema>;
+export type NornWorkflowTarget<ParamsSchema extends z.ZodType = z.ZodType> = NornWorkflowDeclaration<string, ParamsSchema> | NornWorkflowRef<ParamsSchema>;
+export type NornWorkflowRefSchemaInput<ParamsSchema extends z.ZodType = z.ZodType> = string | NornWorkflowDeclaration<string, ParamsSchema>;
 
 export type NornWorkflowParamsInput<TWorkflow extends NornAnyWorkflowDeclaration> = z.input<TWorkflow["params"]>;
 export type NornWorkflowParams<TWorkflow extends NornAnyWorkflowDeclaration> = z.output<TWorkflow["params"]>;
@@ -407,12 +407,12 @@ export const artifactRefSchema = z.object({
 
 export type NornArtifactRef = z.output<typeof artifactRefSchema>;
 
-export function workflowIdSchema<ParamsSchema extends z.ZodType>(params: ParamsSchema): z.ZodType<NornWorkflowId<ParamsSchema>, NornWorkflowIdSchemaInput<ParamsSchema>> {
+export function workflowRefSchema<ParamsSchema extends z.ZodType>(params: ParamsSchema): z.ZodType<NornWorkflowRef<ParamsSchema>, NornWorkflowRefSchemaInput<ParamsSchema>> {
 	void params;
 	return z.preprocess(
 		(value) => isWorkflowDeclaration(value) ? value.id : value,
 		z.string().min(1),
-	) as unknown as z.ZodType<NornWorkflowId<ParamsSchema>, NornWorkflowIdSchemaInput<ParamsSchema>>;
+	) as unknown as z.ZodType<NornWorkflowRef<ParamsSchema>, NornWorkflowRefSchemaInput<ParamsSchema>>;
 }
 
 export type NornLogRef = {

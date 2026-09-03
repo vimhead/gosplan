@@ -192,36 +192,23 @@ return run.next(manifest.workflows.implement, {
 });
 ```
 
-Reusable workflows can accept a serializable typed workflow id for their next
-step:
+Reusable workflows can accept a workflow reference for their next step:
 
 ```ts
-import { artifactRefSchema, workflowIdSchema } from "norn";
+import { artifactRefSchema, workflowRefSchema } from "norn";
 import { z } from "zod";
-
-const planningOutputSchema = z.object({
-  planArtifact: artifactRefSchema,
-  summary: z.string(),
-});
 
 const planningParamsSchema = z.object({
   task: z.string(),
-  nextWorkflowId: workflowIdSchema(planningOutputSchema).nullable(),
+  nextWorkflow: workflowRefSchema(z.object({
+    planArtifact: artifactRefSchema,
+    summary: z.string(),
+  })).nullable(),
 });
 
-return params.nextWorkflowId
-  ? run.next(params.nextWorkflowId, { planArtifact, summary })
+return params.nextWorkflow
+  ? run.next(params.nextWorkflow, { planArtifact, summary })
   : run.complete({ summary, artifacts: { plan: planArtifact } });
-```
-
-Callers can pass either a JSON workflow id or a workflow declaration; the schema
-stores the id:
-
-```ts
-return run.next(reusableManifest.workflows.plan, {
-  task: params.task,
-  nextWorkflowId: projectManifest.workflows.receivePlan,
-});
 ```
 
 Use the default `runWorkspace` isolation for workflows that should operate inside
