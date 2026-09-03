@@ -22,7 +22,7 @@ import { NornRunLogs } from "./logs.ts";
 import { NornRunLease } from "./run-lease.ts";
 import { NornRunLogger } from "./run-log.ts";
 import { NornRunStore, runCurrentRoot } from "./run-store.ts";
-import { NornRunStateStore, getRunInfo, resolveRunRoot, type NornRunState } from "./run-state.ts";
+import { NornRunStateStore, getRunInfo, mergeInterruptedWorkflowParams, resolveRunRoot, type NornRunState } from "./run-state.ts";
 import { NornRunContext } from "./run.ts";
 import { NornJsonWorkflowState, NornMemoryWorkflowState } from "./state-store.ts";
 import { NornWorkflowRegistry, type NornRegisteredWorkflow, type NornWorkflowStepResult } from "./workflow-registry.ts";
@@ -139,6 +139,7 @@ export class NornEngine {
 		const initialState = initialStateStore.currentState();
 		if (initialState.status === "completed") throw new Error(`Run is already completed: ${runRoot}`);
 		if (initialState.status === "interrupted" && params === undefined) throw new Error(`Interrupted workflow resume requires params: ${runRoot}`);
+		if (initialState.status !== "interrupted" && params !== undefined) throw new Error(`Only interrupted workflow resumes accept params: ${runRoot}`);
 
 		const lease = await NornRunLease.acquire(runRoot);
 		let isLeaseOwnedByScheduler = false;
@@ -151,7 +152,7 @@ export class NornEngine {
 			const workflow = this.registry.workflowById(current.workflowId);
 			if (!workflow) throw new Error(`Unknown workflow for resumed run: ${current.workflowId}`);
 			if (state.status === "interrupted") {
-				const parsedParams = workflow.params.parse(params);
+				const parsedParams = workflow.params.parse(mergeInterruptedWorkflowParams(current.params, params, current.interruption?.fields));
 				await session.state.replaceCurrentParams(parsedParams);
 				await recordRunEvent(session, { type: "run.resumed", workflowId: workflow.id, cwd: session.run.cwd });
 				const resumedCurrent = session.state.currentState().current;

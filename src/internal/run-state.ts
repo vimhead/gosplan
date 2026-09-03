@@ -9,6 +9,15 @@ import { runCurrentRoot } from "./run-store.ts";
 
 export const RUN_STATE_FILE_NAME = "run-state.json";
 const LEGACY_RUN_STATE_FILE_NAME = "runtime-state.json";
+
+export function mergeInterruptedWorkflowParams(currentParams: unknown, params: unknown, fields: readonly string[] | undefined): unknown {
+	if (!isRecord(currentParams) || !isRecord(params)) return params;
+	if (fields) {
+		const unsupportedFields = Object.keys(params).filter((field) => !fields.includes(field));
+		if (unsupportedFields.length > 0) throw new Error(`Interrupted workflow params cannot update non-gate fields: ${unsupportedFields.join(", ")}`);
+	}
+	return { ...currentParams, ...params };
+}
 const RUN_STATE_VERSION = 1;
 
 type NornRunWorkflowStep = {
@@ -286,6 +295,10 @@ async function readRunStateJson(currentRoot: string): Promise<unknown> {
 		if (!isNodeError(error) || error.code !== "ENOENT") throw error;
 		return JSON.parse(await readFile(join(currentRoot, LEGACY_RUN_STATE_FILE_NAME), "utf8"));
 	}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function parseNornRunState(value: unknown): NornRunState {

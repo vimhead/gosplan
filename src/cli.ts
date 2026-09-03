@@ -12,7 +12,7 @@ import { generateRunName } from "./internal/run-names.ts";
 import { getRunLeaseOwner } from "./internal/run-lease.ts";
 import { NornRunStore } from "./internal/run-store.ts";
 import { readRunMetrics } from "./internal/metrics.ts";
-import { getRunInfo, listRuns, resolveRunRoot } from "./internal/run-state.ts";
+import { getRunInfo, listRuns, mergeInterruptedWorkflowParams, resolveRunRoot } from "./internal/run-state.ts";
 import { NORN_BUILD_INFO, type NornBuildInfo, type NornGithubReleaseBinaryBuildInfo, type NornNpmGitGlobalBuildInfo } from "./build-info.ts";
 
 const RUNS_ROOT = join(".norn", "runs");
@@ -130,7 +130,7 @@ const COMMANDS: readonly CliCommand[] = [
 		description: "Use when resuming a stopped or interrupted Norn run, including answering an editable gate.",
 		usage: "norn runs resume <run>",
 		arguments: ["run: run id, generated name, or run path"],
-		stdin: "Optional JSON object: {\"params\":{...}}. Interrupted runs require params.",
+		stdin: "Optional JSON object: {\"params\":{...}}. Interrupted runs require a patch containing only editable gate fields.",
 		output: "JSON object with resumed run info under run.",
 		examples: ["printf '{\"params\":{\"decision\":\"accept\"}}' | norn runs resume quiet-river-lantern"],
 		execute: async (args) => {
@@ -812,11 +812,13 @@ async function resumeRun(run: string, args: readonly string[]): Promise<void> {
 async function parseResumeParams(runInfo: NornRunInfo, params: unknown): Promise<unknown> {
 	if (runInfo.status === "interrupted" && params === undefined) throw new Error(`Interrupted workflow resume requires params: ${runInfo.name}`);
 	if (params === undefined) return undefined;
+	if (runInfo.status !== "interrupted") throw new Error(`Only interrupted workflow resumes accept params: ${runInfo.name}`);
 	if (!runInfo.currentWorkflowId) throw new Error(`Run has no current workflow: ${runInfo.name}`);
 	const project = await loadNornProject(process.cwd());
 	const workflow = project.registry.workflowById(runInfo.currentWorkflowId);
 	if (!workflow) throw new Error(`Unknown workflow for resumed run: ${runInfo.currentWorkflowId}`);
-	return workflow.params.parse(params);
+	workflow.params.parse(mergeInterruptedWorkflowParams(runInfo.interruption?.params, params, runInfo.interruption?.fields));
+	return params;
 }
 
 async function waitRun(run: string): Promise<void> {
