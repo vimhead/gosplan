@@ -192,7 +192,9 @@ return run.next(manifest.workflows.implement, {
 });
 ```
 
-Reusable workflows can accept a workflow reference for their next step:
+A reusable workflow can receive a next step. Its caller supplies
+`forwardParams`; the reusable workflow receives them as `next.params`. The
+`params` schema describes the values it contributes:
 
 ```ts
 import { artifactRefSchema, workflowRefSchema } from "norn";
@@ -200,14 +202,21 @@ import { z } from "zod";
 
 const planningParamsSchema = z.object({
   task: z.string(),
-  nextWorkflow: workflowRefSchema(z.object({
-    planArtifact: artifactRefSchema,
-    summary: z.string(),
-  })).nullable(),
+  next: workflowRefSchema({
+    forwardParams: z.object({ task: z.string() }),
+    params: z.object({
+      planArtifact: artifactRefSchema,
+      summary: z.string(),
+    }),
+  }).nullable(),
 });
 
-return params.nextWorkflow
-  ? run.next(params.nextWorkflow, { planArtifact, summary })
+return params.next
+  ? run.next(params.next.workflow, {
+      ...params.next.params,
+      planArtifact,
+      summary,
+    })
   : run.complete({ summary, artifacts: { plan: planArtifact } });
 ```
 
@@ -216,7 +225,10 @@ Caller side:
 ```ts
 return run.next(reusableManifest.workflows.plan, {
   task: params.task,
-  nextWorkflow: projectManifest.workflows.receivePlan,
+  next: {
+    workflow: projectManifest.workflows.implement,
+    forwardParams: { task: params.task },
+  },
 });
 ```
 
