@@ -193,8 +193,8 @@ return run.next(manifest.workflows.implement, {
 ```
 
 A reusable workflow can receive a next step. Its caller supplies opaque
-`forwardParams`; the `params` schema describes the values the reusable workflow
-contributes:
+`forwardParams`, which the reusable workflow must spread into `run.next(...)`.
+The `params` schema describes the values it contributes:
 
 ```ts
 import { artifactRefSchema, workflowRefSchema } from "norn";

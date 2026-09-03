@@ -19,9 +19,14 @@ export type NornWorkflowIsolation<Mode extends NornWorkflowIsolationMode = NornW
 };
 
 declare const nornWorkflowRefParamsBrand: unique symbol;
+declare const nornWorkflowRefForwardParamsBrand: unique symbol;
 
-export type NornWorkflowRef<ParamsSchema extends z.ZodType = z.ZodType, Id extends string = string> = Id & {
-	readonly [nornWorkflowRefParamsBrand]: (params: z.input<ParamsSchema>) => z.input<ParamsSchema>;
+type NornWorkflowRefForwardParams = Record<string, unknown> & {
+	readonly [nornWorkflowRefForwardParamsBrand]: true;
+};
+
+export type NornWorkflowRef<ParamsSchema extends z.ZodType = z.ZodType, Id extends string = string, ForwardParams = unknown> = Id & {
+	readonly [nornWorkflowRefParamsBrand]: (params: z.input<ParamsSchema> & ForwardParams) => z.input<ParamsSchema> & ForwardParams;
 };
 
 export type NornWorkflowDeclaration<
@@ -56,16 +61,16 @@ export type NornWorkflowRefInput<ParamsSchema extends z.ZodType> =
 		readonly forwardParams: Record<string, unknown>;
 	};
 export type NornWorkflowRefOutput<ParamsSchema extends z.ZodType> = {
-	readonly workflow: NornWorkflowRef<ParamsSchema>;
-	readonly forwardParams: Record<string, unknown>;
+	readonly workflow: NornWorkflowRef<ParamsSchema, string, NornWorkflowRefForwardParams>;
+	readonly forwardParams: NornWorkflowRefForwardParams;
 };
 
 export type NornWorkflowParamsInput<TWorkflow extends NornAnyWorkflowDeclaration> = z.input<TWorkflow["params"]>;
 export type NornWorkflowParams<TWorkflow extends NornAnyWorkflowDeclaration> = z.output<TWorkflow["params"]>;
 export type NornWorkflowTargetParamsInput<TWorkflow extends NornWorkflowTarget<any>> = TWorkflow extends NornWorkflowDeclaration<string, infer ParamsSchema>
 	? z.input<ParamsSchema>
-	: TWorkflow extends NornWorkflowRef<infer ParamsSchema>
-		? z.input<ParamsSchema>
+	: TWorkflow extends NornWorkflowRef<infer ParamsSchema, string, infer ForwardParams>
+		? z.input<ParamsSchema> & ForwardParams
 		: never;
 
 export type NornWorkflowGate<ParamsSchema extends z.ZodType> = unknown extends z.input<ParamsSchema>
