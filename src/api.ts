@@ -314,6 +314,15 @@ export type NornFailedRunResult = {
 	readonly metadata: NornRunOutcomeMetadata & { readonly summary: string };
 };
 
+export type NornStoppedRunResult = {
+	readonly status: "stopped";
+	readonly id: string;
+	readonly name: string;
+	readonly workspace: string;
+	readonly cwd: string;
+	readonly workflowId: string;
+};
+
 export type NornRunInterruption = {
 	readonly workflowId: string;
 	readonly params: unknown;
@@ -331,9 +340,9 @@ export type NornInterruptedRunResult = {
 	readonly interruption: NornRunInterruption;
 };
 
-export type NornRunResult = NornStartedRunResult | NornCompletedRunResult | NornFailedRunResult | NornInterruptedRunResult;
+export type NornRunResult = NornStartedRunResult | NornCompletedRunResult | NornFailedRunResult | NornStoppedRunResult | NornInterruptedRunResult;
 
-export type NornRunStatus = "running" | "interrupted" | "completed" | "failed";
+export type NornRunStatus = "running" | "interrupted" | "stopped" | "pendingResume" | "completed" | "failed";
 export type NornRunHealth = "healthy" | "unhealthy";
 
 export type NornRunOutcomeInfo = {

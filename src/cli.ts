@@ -6,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { findNornProject, loadNornProject, NORN_CONFIG_FILE_NAME, NORN_PROJECT_FILE_NAME } from "./plugin-loader.ts";
 import { type NornAnyWorkflowDeclaration, type DeletedNornRunInfo, type NornProjectInfo, type NornRunInfo } from "./api.ts";
 import { NornEngine } from "./internal/engine.ts";
-import { errorMessage, isNodeError } from "./internal/errors.ts";
+import { errorMessage, isNodeError, NornRunStoppedError } from "./internal/errors.ts";
 import { readRunLaunchRequest, readRunResumeRequest, writeRunLaunchRequest, writeRunResumeRequest } from "./internal/launch-request.ts";
 import { generateRunName } from "./internal/run-names.ts";
 import { getRunLeaseOwner } from "./internal/run-lease.ts";
@@ -127,10 +127,10 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.resume",
 		path: ["runs", "resume"],
-		description: "Use when resuming a stopped or interrupted Norn run, including answering an editable gate.",
+		description: "Use when resuming an interrupted gate or a checkpoint restored for retry.",
 		usage: "norn runs resume <run>",
 		arguments: ["run: run id, generated name, or run path"],
-		stdin: "Optional JSON object: {\"params\":{...}}. Interrupted runs require a patch containing only editable gate fields.",
+		stdin: "Optional JSON object: {\"params\":{...}}. Interrupted runs require a patch containing only editable gate fields; pending-resume runs do not accept params.",
 		output: "JSON object with resumed run info under run.",
 		examples: ["printf '{\"params\":{\"decision\":\"accept\"}}' | norn runs resume quiet-river-lantern"],
 		execute: async (args) => {
@@ -229,7 +229,7 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.rollback",
 		path: ["runs", "rollback"],
-		description: "Use when restoring a Norn run to a prior checkpoint before resuming after a fix.",
+		description: "Use when restoring a failed or stopped run to a checkpoint and marking it pending resume.",
 		usage: "norn runs rollback <run> <checkpoint-id>",
 		arguments: ["run: run id, generated name, or run path", "checkpoint-id: checkpoint id from runs.checkpoints"],
 		output: "JSON object with rolled-back run info under run.",
@@ -242,7 +242,7 @@ const COMMANDS: readonly CliCommand[] = [
 	{
 		id: "runs.stop",
 		path: ["runs", "stop"],
-		description: "Use when politely stopping a running Norn execution process.",
+		description: "Use when stopping a running Norn execution while preserving its dirty state for inspection or rollback.",
 		usage: "norn runs stop <run>",
 		arguments: ["run: run id, generated name, or run path"],
 		output: "JSON object with updated run info under run.",
@@ -351,13 +351,13 @@ const HUMAN_COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
 	"workflows.list": "List Norn workflows.",
 	"workflows.inspect": "Inspect a workflow schema and source.",
 	"runs.start": "Start a workflow run.",
-	"runs.resume": "Resume a stopped or interrupted run.",
+	"runs.resume": "Resume an interrupted gate or a restored checkpoint.",
 	"runs.wait": "Wait for a run to stop running.",
 	"runs.list": "List known runs.",
 	"runs.inspect": "Inspect a run.",
 	"runs.logs": "Read run event logs.",
 	"runs.checkpoints": "List run rollback checkpoints.",
-	"runs.rollback": "Roll back a run to a checkpoint.",
+	"runs.rollback": "Restore a run checkpoint for a manual resume.",
 	"runs.metrics": "Inspect run metrics.",
 	"runs.stop": "Stop a running run.",
 	"runs.kill": "Force-stop a running run.",
@@ -810,15 +810,20 @@ async function resumeRun(run: string, args: readonly string[]): Promise<void> {
 }
 
 async function parseResumeParams(runInfo: NornRunInfo, params: unknown): Promise<unknown> {
-	if (runInfo.status === "interrupted" && params === undefined) throw new Error(`Interrupted workflow resume requires params: ${runInfo.name}`);
-	if (params === undefined) return undefined;
-	if (runInfo.status !== "interrupted") throw new Error(`Only interrupted workflow resumes accept params: ${runInfo.name}`);
-	if (!runInfo.currentWorkflowId) throw new Error(`Run has no current workflow: ${runInfo.name}`);
-	const project = await loadNornProject(process.cwd());
-	const workflow = project.registry.workflowById(runInfo.currentWorkflowId);
-	if (!workflow) throw new Error(`Unknown workflow for resumed run: ${runInfo.currentWorkflowId}`);
-	workflow.params.parse(mergeInterruptedWorkflowParams(runInfo.interruption?.params, params, runInfo.interruption?.fields));
-	return params;
+	if (runInfo.status === "interrupted") {
+		if (params === undefined) throw new Error(`Interrupted workflow resume requires params: ${runInfo.name}`);
+		if (!runInfo.currentWorkflowId) throw new Error(`Run has no current workflow: ${runInfo.name}`);
+		const project = await loadNornProject(process.cwd());
+		const workflow = project.registry.workflowById(runInfo.currentWorkflowId);
+		if (!workflow) throw new Error(`Unknown workflow for resumed run: ${runInfo.currentWorkflowId}`);
+		workflow.params.parse(mergeInterruptedWorkflowParams(runInfo.interruption?.params, params, runInfo.interruption?.fields));
+		return params;
+	}
+	if (runInfo.status === "pendingResume") {
+		if (params !== undefined) throw new Error(`Pending-resume workflows do not accept params: ${runInfo.name}`);
+		return undefined;
+	}
+	throw new Error(`Run must be rolled back before resuming: ${runInfo.name}`);
 }
 
 async function waitRun(run: string): Promise<void> {
@@ -885,8 +890,8 @@ async function ensureGitignoreExcludesRunState(projectRoot: string): Promise<voi
 
 async function executeRun(runId: string): Promise<void> {
 	const abortController = new AbortController();
-	process.once("SIGTERM", () => abortController.abort(new Error("Stopped by user")));
-	process.once("SIGINT", () => abortController.abort(new Error("Interrupted")));
+	process.once("SIGTERM", () => abortController.abort(new NornRunStoppedError()));
+	process.once("SIGINT", () => abortController.abort(new NornRunStoppedError()));
 	const project = await loadNornProject(process.cwd());
 	const runRoot = resolve(project.projectRoot, RUNS_ROOT, runId);
 	const engine = new NornEngine({ cwd: project.projectRoot, signal: abortController.signal, gateMode: "pause", config: project.projectConfig });

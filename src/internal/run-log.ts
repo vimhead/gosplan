@@ -36,13 +36,6 @@ export class NornRunLogger {
 		return new NornRunLogger(manifestPath, manifestHeader, events);
 	}
 
-	boundary(): number {
-		return this.events.length;
-	}
-
-	rollback(boundary: number): void {
-		this.events.splice(boundary);
-	}
 
 	async record(event: { readonly type: string; readonly [key: string]: unknown }): Promise<void> {
 		this.events.push({ at: new Date().toISOString(), ...event });

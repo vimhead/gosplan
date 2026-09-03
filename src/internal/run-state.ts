@@ -166,6 +166,18 @@ export class NornRunStateStore {
 		});
 	}
 
+	async prepareForResumeAfterRollback(): Promise<void> {
+		if (!this.state.current) throw new Error("Cannot resume a checkpoint without a current step");
+		if (this.state.status === "interrupted") return;
+		if (this.state.status !== "running") throw new Error(`Cannot resume checkpoint with ${this.state.status} status`);
+		await this.update({ status: "pendingResume", outcome: null, failed: null });
+	}
+
+	async stopCurrent(): Promise<void> {
+		if (!this.state.current) throw new Error("Cannot stop run without current step");
+		await this.update({ status: "stopped", outcome: null, failed: null });
+	}
+
 	async replaceCurrentParams(params: unknown): Promise<void> {
 		if (!this.state.current) throw new Error("Cannot resume run without current step");
 		await this.update({
@@ -258,7 +270,6 @@ function runRootCandidates(sessionCwd: string, run: string): string[] {
 }
 
 async function runHealth(runRoot: string, status: NornRunStatus): Promise<NornRunHealth> {
-	if (status === "failed") return "unhealthy";
 	if (status !== "running") return "healthy";
 	return getRunLeaseHealth(runRoot);
 }
@@ -311,8 +322,9 @@ function parseNornRunState(value: unknown): NornRunState {
 	if (typeof normalizedState.entrypointWorkflowId !== "string" && typeof normalizedState.rootWorkflowId === "string") normalizedState.entrypointWorkflowId = normalizedState.rootWorkflowId;
 	if (typeof state.entrypointWorkflowId !== "string" || state.entrypointWorkflowId.length === 0) throw new Error("Invalid run state entrypoint workflow id");
 	if (typeof state.workspace !== "string" || state.workspace.length === 0) throw new Error("Invalid run state workspace");
-	if (state.status !== "running" && state.status !== "interrupted" && state.status !== "completed" && state.status !== "failed") throw new Error("Invalid run state status");
+	if (state.status !== "running" && state.status !== "interrupted" && state.status !== "stopped" && state.status !== "pendingResume" && state.status !== "completed" && state.status !== "failed") throw new Error("Invalid run state status");
 	if (state.status === "interrupted") assertInterruptedNornRunState(state);
+	if (state.status === "stopped" || state.status === "pendingResume") assertResumableNornRunState(state);
 	if (typeof state.startedAt !== "string" || typeof state.updatedAt !== "string") throw new Error("Invalid run state timestamps");
 	return state as NornRunState;
 }
@@ -322,6 +334,10 @@ function assertInterruptedNornRunState(state: Partial<NornRunState>): void {
 	const interruption = state.current.interruption;
 	if (!interruption || interruption.status !== "pending") throw new Error("Invalid run interruption");
 	if (typeof interruption.description !== "string" || interruption.description.length === 0) throw new Error("Invalid run interruption description");
+}
+
+function assertResumableNornRunState(state: Partial<NornRunState>): void {
+	if (!state.current) throw new Error("Invalid resumable run current step");
 }
 
 function runInterruption(state: NornRunState): NornRunInterruption | undefined {

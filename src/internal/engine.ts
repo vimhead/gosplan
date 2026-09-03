@@ -17,7 +17,7 @@ import {
 } from "../api.ts";
 import { NornAgentResponseCollector } from "./agent-response-tool.ts";
 import { NornArtifacts } from "./artifacts.ts";
-import { errorMessage } from "./errors.ts";
+import { errorMessage, NornRunStoppedError } from "./errors.ts";
 import { NornRunLogs } from "./logs.ts";
 import { NornRunLease } from "./run-lease.ts";
 import { NornRunLogger } from "./run-log.ts";
@@ -127,6 +127,8 @@ export class NornEngine {
 		try {
 			const runStore = await NornRunStore.open(runRoot);
 			await runStore.restoreSnapshot(checkpointId);
+			const state = await NornRunStateStore.load(runRoot);
+			await state.prepareForResumeAfterRollback();
 			return getRunInfo(runRoot);
 		} finally {
 			await lease.release();
@@ -137,14 +139,13 @@ export class NornEngine {
 		const runRoot = await resolveRunRoot(this.input.cwd, path);
 		const initialStateStore = await NornRunStateStore.load(runRoot);
 		const initialState = initialStateStore.currentState();
-		if (initialState.status === "completed") throw new Error(`Run is already completed: ${runRoot}`);
 		if (initialState.status === "interrupted" && params === undefined) throw new Error(`Interrupted workflow resume requires params: ${runRoot}`);
-		if (initialState.status !== "interrupted" && params !== undefined) throw new Error(`Only interrupted workflow resumes accept params: ${runRoot}`);
+		if (initialState.status === "pendingResume" && params !== undefined) throw new Error(`Pending-resume workflows do not accept params: ${runRoot}`);
+		if (initialState.status !== "interrupted" && initialState.status !== "pendingResume") throw new Error(`Run must be rolled back before resuming: ${runRoot}`);
 
 		const lease = await NornRunLease.acquire(runRoot);
 		let isLeaseOwnedByScheduler = false;
 		try {
-			if (initialState.status === "running") await (await NornRunStore.open(runRoot)).restoreCurrentSnapshot();
 			const session = await this.openRunSession(runRoot, lease);
 			const state = session.state.currentState();
 			const current = state.current;
@@ -160,6 +161,7 @@ export class NornEngine {
 				isLeaseOwnedByScheduler = true;
 				return this.runScheduler(session, toWorkflowStep(workflow, resumedCurrent));
 			}
+			if (state.status !== "pendingResume") throw new Error(`Run must be rolled back before resuming: ${runRoot}`);
 			await recordRunEvent(session, { type: "run.resumed", workflowId: workflow.id, cwd: session.run.cwd });
 			isLeaseOwnedByScheduler = true;
 			return this.runScheduler(session, toWorkflowStep(workflow, current));
@@ -195,7 +197,6 @@ export class NornEngine {
 				if (stepResult.type === "fail") {
 					await session.state.failRun(stepResult.workflow.id, stepResult.metadata);
 					await recordRunEvent(session, { type: "run.failed", workflowId: stepResult.workflow.id, metadata: stepResult.metadata });
-					await commitRunBoundary(session, `run failed: ${stepResult.workflow.id}`);
 					return { status: "failed", id: stepRuntime.id, name: session.state.currentState().name, workspace: stepRuntime.workspace, cwd: stepRuntime.cwd, workflowId: stepResult.workflow.id, metadata: stepResult.metadata };
 				}
 				const nextStep = this.nextWorkflowStep(stepResult);
@@ -206,9 +207,13 @@ export class NornEngine {
 			}
 			throw new Error("Run exceeded 1000 scheduler steps");
 		} catch (error) {
+			if (isRunStopped(session, error)) {
+				await session.state.stopCurrent();
+				await recordRunEvent(session, { type: "run.stopped", workflowId: currentStep.workflow.id });
+				return { status: "stopped", id: session.run.id, name: session.state.currentState().name, workspace: session.run.workspace, cwd: session.run.cwd, workflowId: currentStep.workflow.id };
+			}
 			await session.state.failCurrent(errorMessage(error));
 			await recordRunEvent(session, { type: "run.failed", workflowId: currentStep.workflow.id, error: errorMessage(error) });
-			await commitRunBoundary(session, `run failed: ${currentStep.workflow.id}`);
 			throw error;
 		} finally {
 			await session.lease.release();
@@ -217,8 +222,6 @@ export class NornEngine {
 	}
 
 	private async executeWorkflowStep(session: RunSession, step: WorkflowStep, run: NornRunContext): Promise<NornWorkflowStepResult> {
-		const boundaryRef = await session.runStore.currentSnapshotRef();
-		const logBoundary = session.logger.boundary();
 		const startedAtMs = Date.now();
 		try {
 			await assertWorkspaceBoundary(session, run.workspace);
@@ -231,9 +234,12 @@ export class NornEngine {
 			else await recordRunEvent(session, { type: "workflow.transitioned", fromWorkflowId: step.workflow.id, toWorkflowId: result.workflowId, durationMs });
 			return result;
 		} catch (error) {
-			await rollbackRunBoundary(session, boundaryRef);
-			rollbackRunLogBoundary(session, logBoundary);
-			await recordRunEvent(session, { type: "workflow.failed", workflowId: step.workflow.id, durationMs: Date.now() - startedAtMs, error: errorMessage(error) });
+			await recordRunEvent(session, {
+				type: isRunStopped(session, error) ? "workflow.stopped" : "workflow.failed",
+				workflowId: step.workflow.id,
+				durationMs: Date.now() - startedAtMs,
+				...(isRunStopped(session, error) ? {} : { error: errorMessage(error) }),
+			});
 			throw error;
 		}
 	}
@@ -424,6 +430,10 @@ function throwIfRunAborted(activeRun: ActiveRun): void {
 	throw new Error(typeof reason === "string" && reason.length > 0 ? reason : "Run aborted");
 }
 
+function isRunStopped(session: RunSession, error: unknown): boolean {
+	return error instanceof NornRunStoppedError || session.activeRun.controller.signal.reason instanceof NornRunStoppedError;
+}
+
 function interruptedLaunchResult(run: RunIdentity, workflow: NornAnyWorkflowDeclaration, params: unknown, interruption: { readonly description?: string; readonly fields?: readonly string[] }): NornInterruptedRunResult {
 	if (!workflow.gate) throw new Error(`Workflow is not gated: ${workflow.id}`);
 	if (!interruption.description) throw new Error(`Interrupted workflow is missing description: ${workflow.id}`);
@@ -455,15 +465,6 @@ async function recordRunEvent(
 async function commitRunBoundary(session: RunSession, message: string): Promise<void> {
 	await session.lease.assertOwned();
 	await session.runStore.snapshotCurrent(message);
-}
-
-async function rollbackRunBoundary(session: RunSession, ref: string): Promise<void> {
-	await session.lease.assertOwned();
-	await session.runStore.restoreSnapshot(ref);
-}
-
-function rollbackRunLogBoundary(session: RunSession, boundary: number): void {
-	session.logger.rollback(boundary);
 }
 
 async function assertWorkspaceBoundary(session: RunSession, workspace: string): Promise<void> {

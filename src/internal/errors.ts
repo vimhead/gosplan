@@ -1,3 +1,10 @@
+export class NornRunStoppedError extends Error {
+	constructor() {
+		super("Stopped by user");
+		this.name = "NornRunStoppedError";
+	}
+}
+
 export function zodErrorMessage(error: unknown): string {
 	const issues = (error as { issues?: Array<{ path?: unknown[]; message?: string }> }).issues;
 	if (!Array.isArray(issues) || issues.length === 0) return errorMessage(error);
