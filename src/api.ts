@@ -63,11 +63,11 @@ export type NornWorkflowRefInput<ForwardParamsSchema extends z.ZodType, ParamsSc
 export type NornWorkflowRefOutput<ForwardParamsSchema extends z.ZodType, ParamsSchema extends z.ZodType> =
 	| {
 		readonly workflow: NornWorkflowRef<ParamsSchema>;
-		readonly params: Record<string, never>;
+		readonly forwardParams: Record<string, never>;
 	}
 	| {
 		readonly workflow: NornWorkflowRef<NornWorkflowRefParamsSchema<ForwardParamsSchema, ParamsSchema>>;
-		readonly params: z.output<ForwardParamsSchema>;
+		readonly forwardParams: z.output<ForwardParamsSchema>;
 	};
 
 export type NornWorkflowParamsInput<TWorkflow extends NornAnyWorkflowDeclaration> = z.input<TWorkflow["params"]>;
@@ -475,20 +475,20 @@ export function workflowRefSchema(options?: NornWorkflowRefSchemaOptions): z.Zod
 	return z.union([
 		z.preprocess(
 			(value) => isWorkflowRefInput(value)
-				? { workflow: normalizeWorkflowRef(value.workflow), params: value.forwardParams }
+				? { workflow: normalizeWorkflowRef(value.workflow), forwardParams: value.forwardParams }
 				: value,
 			z.object({
 				workflow: z.string().min(1),
-				params: forwardParamsSchema,
+				forwardParams: forwardParamsSchema,
 			}),
 		),
 		z.preprocess(
 			(value) => isWorkflowRefInput(value)
 				? value
-				: { workflow: normalizeWorkflowRef(value), params: {} },
+				: { workflow: normalizeWorkflowRef(value), forwardParams: {} },
 			z.object({
 				workflow: z.string().min(1),
-				params: emptyWorkflowRefParamsSchema,
+				forwardParams: emptyWorkflowRefParamsSchema,
 			}),
 		),
 	]);
