@@ -13,6 +13,7 @@ import { getRunLeaseOwner } from "./internal/run-lease.ts";
 import { NornRunStore } from "./internal/run-store.ts";
 import { readRunMetrics } from "./internal/metrics.ts";
 import { getRunInfo, listRuns, mergeInterruptedWorkflowParams, resolveRunRoot } from "./internal/run-state.ts";
+import { inspectNornSkill, listNornSkills, type NornSkillSummary } from "./internal/skills.ts";
 import { NORN_BUILD_INFO, type NornBuildInfo, type NornGithubReleaseBinaryBuildInfo, type NornNpmGitGlobalBuildInfo } from "./build-info.ts";
 
 const RUNS_ROOT = join(".norn", "runs");
@@ -85,6 +86,25 @@ const COMMANDS: readonly CliCommand[] = [
 			assertNoExtraArgs("seer inspect", args);
 			await inspectSeerMode();
 		},
+	},
+	{
+		id: "skills.list",
+		path: ["skills", "list"],
+		description: "Use when listing built-in Norn agent skills and their frontmatter.",
+		usage: "norn skills list",
+		output: "JSON object with built-in skill frontmatter under skills.",
+		examples: ["norn skills list"],
+		execute: listSkills,
+	},
+	{
+		id: "skills.inspect",
+		path: ["skills", "inspect"],
+		description: "Use when reading a built-in Norn agent skill's full Markdown and frontmatter.",
+		usage: "norn skills inspect <skill-name>",
+		arguments: ["skill-name: built-in skill name from skills.list"],
+		output: "JSON object with skill frontmatter, body, and full Markdown content under skill.",
+		examples: ["norn skills inspect norn-workflow-observability"],
+		execute: inspectSkill,
 	},
 	{
 		id: "workflows.list",
@@ -323,6 +343,8 @@ const COMMANDS: readonly CliCommand[] = [
 const HELP_COMMAND_ORDER = [
 	"commands.list",
 	"commands.inspect",
+	"skills.list",
+	"skills.inspect",
 	"workflows.list",
 	"workflows.inspect",
 	"runs.start",
@@ -348,6 +370,8 @@ const HELP_COMMAND_ORDER = [
 const HUMAN_COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
 	"commands.list": "List machine-readable command metadata.",
 	"commands.inspect": "Inspect one command's machine-readable contract.",
+	"skills.list": "List built-in Norn agent skills.",
+	"skills.inspect": "Inspect a built-in Norn agent skill.",
 	"workflows.list": "List Norn workflows.",
 	"workflows.inspect": "Inspect a workflow schema and source.",
 	"runs.start": "Start a workflow run.",
@@ -428,6 +452,19 @@ async function inspectCliCommand(args: readonly string[]): Promise<void> {
 	writeJson({ command: cliCommandInfo(command) });
 }
 
+function listSkills(args: readonly string[]): void {
+	assertNoExtraArgs("skills list", args);
+	writeJson({ skills: listNornSkills() });
+}
+
+function inspectSkill(args: readonly string[]): void {
+	const skillName = requiredArg("skills inspect", args, 0, "skill name");
+	assertNoExtraArgs("skills inspect", args.slice(1));
+	const skill = inspectNornSkill(skillName);
+	if (!skill) throw new Error(`Unknown norn skill: ${skillName}`);
+	writeJson({ skill });
+}
+
 function cliCommandInfo(command: CliCommand): CliCommandInfo {
 	return {
 		id: command.id,
@@ -472,6 +509,7 @@ function renderGroupHelp(path: readonly string[], commands: readonly CliCommand[
 		"",
 		"Usage:",
 		...groupHelpUsage(path).map((line) => `  ${line}`),
+		...skillHelpSection(path),
 		"",
 		"Commands:",
 		renderCommandSummary(commands),
@@ -507,6 +545,22 @@ function renderCommandSummary(commands: readonly CliCommand[]): string {
 	const commandNames = commands.map((command) => command.path.join(" "));
 	const width = Math.max(...commandNames.map((name) => name.length));
 	return commands.map((command, index) => `  ${commandNames[index].padEnd(width)}  ${commandHumanSummary(command)}`).join("\n");
+}
+
+function skillHelpSection(path: readonly string[]): readonly string[] {
+	if (!shouldShowSkillsInHelp(path)) return [];
+	const skills = listNornSkills();
+	if (skills.length === 0) return [];
+	return ["", "Skills:", renderSkillSummary(skills)];
+}
+
+function shouldShowSkillsInHelp(path: readonly string[]): boolean {
+	return path.length === 0 || (path.length === 1 && path[0] === "skills");
+}
+
+function renderSkillSummary(skills: readonly NornSkillSummary[]): string {
+	const width = Math.max(...skills.map((skill) => skill.name.length));
+	return skills.map((skill) => `  ${skill.name.padEnd(width)}  ${skill.description}`).join("\n");
 }
 
 function helpSection(title: string, lines: readonly string[]): readonly string[] {
