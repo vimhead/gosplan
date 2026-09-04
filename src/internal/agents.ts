@@ -229,6 +229,11 @@ class CreatedNornAgentSession implements NornAgentSession {
 			});
 			this.input.signal?.throwIfAborted();
 			capturedResponse = this.input.responseCollector.get(responseRunId);
+			if (!capturedResponse.called) {
+				await this.promptForStructuredResponse(agentInput, responseRunId, attempt, previousError);
+				this.input.signal?.throwIfAborted();
+				capturedResponse = this.input.responseCollector.get(responseRunId);
+			}
 		} finally {
 			this.input.signal?.removeEventListener("abort", abortNestedSession);
 			releaseResponseSlot();
@@ -243,6 +248,29 @@ class CreatedNornAgentSession implements NornAgentSession {
 			toolResponse: capturedResponse.response,
 			sessionFile: this.input.session.sessionFile,
 		};
+	}
+
+	private async promptForStructuredResponse<ResponseSchema extends z.ZodType>(
+		agentInput: NornAgentPromptInput<ResponseSchema>,
+		responseRunId: string,
+		attempt: number,
+		previousError: string | undefined,
+	): Promise<void> {
+		const activeToolNames = this.input.session.getActiveToolNames();
+		await this.input.logger.record({ type: "agent.response-finalization.started", label: this.label, attempt });
+		this.input.session.setActiveToolsByName([AGENT_RESPONSE_TOOL_NAME]);
+		try {
+			await this.input.session.prompt(withResponseToolFinalizationInstruction(agentInput.response, this.label, responseRunId, attempt, previousError), {
+				...agentInput.options,
+				source: agentInput.options?.source ?? "extension",
+			});
+			await this.input.logger.record({ type: "agent.response-finalization.completed", label: this.label, attempt });
+		} catch (error) {
+			await this.input.logger.record({ type: "agent.response-finalization.failed", label: this.label, attempt, error: errorMessage(error) });
+			throw error;
+		} finally {
+			this.input.session.setActiveToolsByName(activeToolNames);
+		}
 	}
 }
 
@@ -272,6 +300,26 @@ function withResponseToolInstruction(
 		`Pass runId exactly as: ${responseRunId}`,
 		`Pass label exactly as: ${label}`,
 		"Pass the structured workflow response in the tool's response argument.",
+		"The response argument must match this JSON Schema:",
+		JSON.stringify(z.toJSONSchema(responseSchema), null, 2),
+		...(attempt > 1 && previousError ? ["", `Previous structured response attempt failed: ${previousError}`] : []),
+	].join("\n");
+}
+
+function withResponseToolFinalizationInstruction(
+	responseSchema: z.ZodType,
+	label: string,
+	responseRunId: string,
+	attempt: number,
+	previousError: string | undefined,
+): string {
+	return [
+		"Your previous workflow response turn ended without recording the structured response.",
+		`Use the ${AGENT_RESPONSE_TOOL_NAME} tool now. It is the only active tool for this turn.`,
+		"Do not answer in assistant text or Markdown.",
+		`Pass runId exactly as: ${responseRunId}`,
+		`Pass label exactly as: ${label}`,
+		"Pass the structured workflow response in the tool's response argument, based on the work you already completed in this session.",
 		"The response argument must match this JSON Schema:",
 		JSON.stringify(z.toJSONSchema(responseSchema), null, 2),
 		...(attempt > 1 && previousError ? ["", `Previous structured response attempt failed: ${previousError}`] : []),
