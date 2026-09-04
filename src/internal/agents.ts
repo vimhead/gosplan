@@ -63,7 +63,13 @@ export class NornAgentRunner {
 
 		const eventBus = createEventBus();
 		const agentDir = this.input.agentDir ?? getAgentDir();
-		const loader = new DefaultResourceLoader({ cwd, agentDir, eventBus });
+		const loader = new DefaultResourceLoader({
+			cwd,
+			agentDir,
+			eventBus,
+			systemPromptOverride: systemPromptOverride(agentInput),
+			appendSystemPromptOverride: appendSystemPromptOverride(agentInput),
+		});
 		await loader.reload();
 		const { session } = await createAgentSession({
 			cwd,
@@ -110,6 +116,16 @@ export class NornAgentRunner {
 		}
 		return resolvedPath;
 	}
+}
+
+function systemPromptOverride(agentInput: NornAgentCreateSessionInput): (() => string) | undefined {
+	const systemPrompt = agentInput.systemPrompt;
+	return systemPrompt === undefined ? undefined : () => systemPrompt;
+}
+
+function appendSystemPromptOverride(agentInput: NornAgentCreateSessionInput): ((base: string[]) => string[]) | undefined {
+	const appendSystemPrompt = agentInput.appendSystemPrompt;
+	return appendSystemPrompt === undefined ? undefined : (base) => [...base, ...appendSystemPrompt];
 }
 
 class CreatedNornAgentSession implements NornAgentSession {

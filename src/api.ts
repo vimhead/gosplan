@@ -503,6 +503,8 @@ export type NornAgentCreateSessionInput = {
 	readonly beforeSessionStart?: (context: NornAgentBeforeSessionStartContext) => MaybePromise<void>;
 	readonly model?: CreateAgentSessionOptions["model"];
 	readonly thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
+	readonly systemPrompt?: string;
+	readonly appendSystemPrompt?: readonly string[];
 };
 
 export type NornAgentPromptInput<ResponseSchema extends z.ZodType> = {

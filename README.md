@@ -245,6 +245,20 @@ export const verifyWorkflow = {
 } as const satisfies NornWorkflowDefinition;
 ```
 
+Workflow agents can use dedicated system prompts when a step needs a strict role
+such as read-only review:
+
+```ts
+const review = await run.agents.prompt({
+  label: "review",
+  cwd: repositoryPath,
+  tools: ["read", "grep", "find", "ls", "bash"],
+  systemPrompt: "You are a read-only reviewer. Do not edit files.",
+  prompt: "Review the current diff from scratch.",
+  response: reviewResponseSchema,
+});
+```
+
 A gate pauses before a workflow and lets selected top-level params be edited
 before execution:
 
